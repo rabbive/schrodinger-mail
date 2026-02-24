@@ -1,0 +1,27 @@
+# Schrödinger Mail — Docker Compose
+# ==============================================
+# Usage: docker compose up --build
+# Then open http://localhost:5001
+
+services:
+  quantum-email:
+    build: .
+    container_name: schrodinger-mail
+    ports:
+      - "5001:5001"
+    environment:
+      - QEC_SECRET_KEY=${QEC_SECRET_KEY:-quantum-docker-secret-change-me}
+      - QEC_PORT=5001
+      - QEC_DEBUG=0
+    volumes:
+      - qec-data:/app/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:5001/api/auth/status')"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+volumes:
+  qec-data:
+    driver: local
