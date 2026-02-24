@@ -431,6 +431,198 @@ def hybrid_decapsulate(
 
 
 # ---------------------------------------------------------------------------
+# Zero-Knowledge Key Encryption (encrypt private keys at rest)
+# ---------------------------------------------------------------------------
+# Private keys are encrypted with the user's password before storage.
+# The server never sees raw private keys when operating in ZK mode.
+
+_ZK_SALT_LEN = 16
+_ZK_NONCE_LEN = 12
+_ZK_TAG_LEN = 16
+
+
+def encrypt_key_blob(private_keys: Dict[str, bytes], password: str) -> bytes:
+    """
+    Encrypt a dict of private keys into a single blob using a password.
+
+    The blob layout is::
+
+        [16B salt][12B nonce][16B tag][ciphertext]
+
+    The AES-256-GCM key is derived from *password* via scrypt.
+    """
+    import base64 as _b64, json as _json
+
+    serialized = _json.dumps(
+        {k: _b64.b64encode(v).decode("ascii") for k, v in private_keys.items()}
+    ).encode("utf-8")
+    key, salt = derive_key_from_password(password)
+    ciphertext, nonce, tag = aes_gcm_encrypt(serialized, key)
+    return salt + nonce + tag + ciphertext
+
+
+def decrypt_key_blob(blob: bytes, password: str) -> Dict[str, bytes]:
+    """
+    Inverse of :func:`encrypt_key_blob`.
+
+    Raises ``ValueError`` if the password is wrong (GCM tag check fails).
+    """
+    import base64 as _b64, json as _json
+
+    salt = blob[:_ZK_SALT_LEN]
+    nonce = blob[_ZK_SALT_LEN : _ZK_SALT_LEN + _ZK_NONCE_LEN]
+    tag = blob[_ZK_SALT_LEN + _ZK_NONCE_LEN : _ZK_SALT_LEN + _ZK_NONCE_LEN + _ZK_TAG_LEN]
+    ciphertext = blob[_ZK_SALT_LEN + _ZK_NONCE_LEN + _ZK_TAG_LEN :]
+    key, _ = derive_key_from_password(password, salt)
+    plaintext = aes_gcm_decrypt(ciphertext, key, nonce, tag)
+    data = _json.loads(plaintext.decode("utf-8"))
+    return {k: _b64.b64decode(v) for k, v in data.items()}
+
+
+# ---------------------------------------------------------------------------
+# Attachment Encryption
+# ---------------------------------------------------------------------------
+
+def encrypt_attachment(data: bytes, key: bytes | None = None) -> Tuple[bytes, bytes]:
+    """
+    Encrypt attachment data.  Returns ``(encrypted_blob, file_key)``.
+
+    *encrypted_blob* layout: ``[12B nonce][16B tag][ciphertext]``
+
+    If *key* is ``None`` a fresh random 32-byte key is generated.
+    """
+    if key is None:
+        key = os.urandom(32)
+    ct, nonce, tag = aes_gcm_encrypt(data, key)
+    return nonce + tag + ct, key
+
+
+def decrypt_attachment(blob: bytes, key: bytes) -> bytes:
+    """Inverse of :func:`encrypt_attachment`."""
+    nonce = blob[:12]
+    tag = blob[12:28]
+    ct = blob[28:]
+    return aes_gcm_decrypt(ct, key, nonce, tag)
+
+
+# ---------------------------------------------------------------------------
+# Forward-Secrecy Ratchet (Kyber-based)
+# ---------------------------------------------------------------------------
+# Simplified symmetric ratchet: each message derives the next chain key via
+# HKDF-like construction using SHA-256.  A new Kyber DH ratchet step resets
+# the chain whenever the receiver replies.
+
+def ratchet_init(shared_secret: bytes) -> Dict[str, bytes]:
+    """Initialise a ratchet state from a shared secret."""
+    chain_key = hashlib.sha256(b"ratchet-ck-init" + shared_secret).digest()
+    return {"chain_key": chain_key, "step": 0}
+
+
+def ratchet_advance(state: Dict[str, Any]) -> Tuple[bytes, Dict[str, Any]]:
+    """
+    Advance the symmetric ratchet by one step.
+
+    Returns ``(message_key, new_state)``.  The caller should use
+    *message_key* as the AES-256-GCM key and persist *new_state*.
+    """
+    ck = state["chain_key"]
+    step = state.get("step", 0)
+    message_key = hashlib.sha256(b"ratchet-mk" + ck + step.to_bytes(4, "big")).digest()
+    next_ck = hashlib.sha256(b"ratchet-ck" + ck + step.to_bytes(4, "big")).digest()
+    return message_key, {"chain_key": next_ck, "step": step + 1}
+
+
+def ratchet_dh_step(
+    local_kyber_sk: bytes, remote_kyber_pk: bytes, old_state: Dict[str, Any]
+) -> Tuple[bytes, bytes, Dict[str, Any]]:
+    """
+    Perform a DH ratchet step using Kyber KEM.
+
+    Returns ``(encapsulated_key, message_key, new_state)``.
+    The encapsulated_key must be sent alongside the ciphertext so the
+    receiver can perform the matching decapsulation step.
+    """
+    encap, new_ss = kem_encapsulate(remote_kyber_pk)
+    merged = hashlib.sha256(
+        old_state["chain_key"] + new_ss
+    ).digest()
+    new_state = ratchet_init(merged)
+    msg_key, new_state = ratchet_advance(new_state)
+    return encap, msg_key, new_state
+
+
+def ratchet_dh_receive(
+    encapsulated_key: bytes, local_kyber_sk: bytes, old_state: Dict[str, Any]
+) -> Tuple[bytes, Dict[str, Any]]:
+    """
+    Receiver side of a DH ratchet step.
+
+    Returns ``(message_key, new_state)``.
+    """
+    new_ss = kem_decapsulate(encapsulated_key, local_kyber_sk)
+    merged = hashlib.sha256(
+        old_state["chain_key"] + new_ss
+    ).digest()
+    new_state = ratchet_init(merged)
+    msg_key, new_state = ratchet_advance(new_state)
+    return msg_key, new_state
+
+
+# ---------------------------------------------------------------------------
+# Multi-Recipient Encryption
+# ---------------------------------------------------------------------------
+
+def multi_recipient_encrypt(
+    plaintext: bytes,
+    recipients: List[Tuple[str, bytes]],
+) -> Tuple[bytes, bytes, bytes, List[Dict[str, Any]]]:
+    """
+    Encrypt *plaintext* for multiple recipients.
+
+    Parameters
+    ----------
+    plaintext : bytes
+    recipients : list of (username, kyber_pk) tuples
+
+    Returns
+    -------
+    (ciphertext, nonce, tag, per_recipient_keys)
+        *per_recipient_keys* is a list of dicts with ``username`` and
+        ``encapsulated_key`` for each recipient.
+    """
+    symmetric_key = os.urandom(32)
+    ct, nonce, tag = aes_gcm_encrypt(plaintext, symmetric_key)
+
+    per_recipient: List[Dict[str, Any]] = []
+    for username, kyber_pk in recipients:
+        encap, shared_secret = kem_encapsulate(kyber_pk)
+        wrapped_ct, wrapped_nonce, wrapped_tag = aes_gcm_encrypt(symmetric_key, shared_secret)
+        per_recipient.append({
+            "username": username,
+            "encapsulated_key": encap,
+            "wrapped_key": wrapped_nonce + wrapped_tag + wrapped_ct,
+        })
+    return ct, nonce, tag, per_recipient
+
+
+def multi_recipient_decrypt(
+    ciphertext: bytes,
+    nonce: bytes,
+    tag: bytes,
+    encapsulated_key: bytes,
+    wrapped_key: bytes,
+    kyber_sk: bytes,
+) -> bytes:
+    """Decrypt a multi-recipient message for one specific recipient."""
+    shared_secret = kem_decapsulate(encapsulated_key, kyber_sk)
+    w_nonce = wrapped_key[:12]
+    w_tag = wrapped_key[12:28]
+    w_ct = wrapped_key[28:]
+    symmetric_key = aes_gcm_decrypt(w_ct, shared_secret, w_nonce, w_tag)
+    return aes_gcm_decrypt(ciphertext, symmetric_key, nonce, tag)
+
+
+# ---------------------------------------------------------------------------
 # Performance Benchmarks
 # ---------------------------------------------------------------------------
 

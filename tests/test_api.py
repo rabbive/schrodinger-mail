@@ -15,10 +15,15 @@ import database as db
 def app_client(monkeypatch, tmp_path):
     """Create a fresh Flask test client with an isolated database."""
     db_path = tmp_path / "test_app.db"
+    db_url = f"sqlite:///{db_path}"
     monkeypatch.setattr(db, "DB_PATH", db_path)
-    monkeypatch.setattr(db, "_conn", None)
+    monkeypatch.setattr(db, "_engine", None)
+    monkeypatch.setattr(db, "_SessionFactory", None)
 
-    import importlib
+    import config as cfg
+    monkeypatch.setattr(cfg, "DB_PATH", db_path)
+    monkeypatch.setattr(cfg, "DATABASE_URL", db_url)
+
     import server as srv
     import app as app_module
 

@@ -20,7 +20,7 @@ RUN git clone --depth 1 --branch 0.12.0 https://github.com/open-quantum-safe/lib
 FROM python:3.12-slim
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    libssl3 \
+    libssl3 libpq5 \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy liboqs shared libraries
@@ -39,8 +39,12 @@ COPY . .
 RUN mkdir -p /app/data
 
 ENV QEC_SECRET_KEY=change-me-in-production
+ENV QEC_JWT_SECRET=change-me-in-production
 ENV QEC_PORT=5001
 ENV QEC_DEBUG=0
+ENV QEC_LOG_LEVEL=INFO
+ENV QEC_LOG_FORMAT=json
+ENV QEC_METRICS=1
 ENV PYTHONUNBUFFERED=1
 
 EXPOSE 5001

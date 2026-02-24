@@ -299,6 +299,102 @@ class TestFullPipeline:
         assert crypto_utils.verify(msg_out, sig_out, sender_sig_pk) is False
 
 
+# ── Zero-Knowledge Key Encryption ────────────────────────────────────────────
+
+class TestKeyEncryption:
+    def test_encrypt_decrypt_roundtrip(self):
+        pk, sk = crypto_utils.generate_kem_keypair()
+        sig_pk, sig_sk = crypto_utils.generate_sig_keypair()
+        keys = {"kyber_sk": sk, "dilithium_sk": sig_sk}
+        blob = crypto_utils.encrypt_key_blob(keys, "test-password")
+        recovered = crypto_utils.decrypt_key_blob(blob, "test-password")
+        assert recovered["kyber_sk"] == sk
+        assert recovered["dilithium_sk"] == sig_sk
+
+    def test_wrong_password_fails(self):
+        keys = {"key": os.urandom(64)}
+        blob = crypto_utils.encrypt_key_blob(keys, "correct-pass")
+        with pytest.raises(ValueError):
+            crypto_utils.decrypt_key_blob(blob, "wrong-pass")
+
+
+# ── Attachment Encryption ────────────────────────────────────────────────────
+
+class TestAttachmentEncryption:
+    def test_encrypt_decrypt_roundtrip(self):
+        data = b"Hello, attachment!" * 100
+        encrypted, key = crypto_utils.encrypt_attachment(data)
+        decrypted = crypto_utils.decrypt_attachment(encrypted, key)
+        assert decrypted == data
+
+    def test_custom_key(self):
+        data = os.urandom(1024)
+        key = os.urandom(32)
+        encrypted, returned_key = crypto_utils.encrypt_attachment(data, key)
+        assert returned_key == key
+        assert crypto_utils.decrypt_attachment(encrypted, key) == data
+
+
+# ── Forward Secrecy Ratchet ──────────────────────────────────────────────────
+
+class TestRatchet:
+    def test_ratchet_init_and_advance(self):
+        state = crypto_utils.ratchet_init(os.urandom(32))
+        assert "chain_key" in state
+        msg_key, new_state = crypto_utils.ratchet_advance(state)
+        assert len(msg_key) == 32
+        assert new_state["step"] == 1
+        assert new_state["chain_key"] != state["chain_key"]
+
+    def test_ratchet_produces_unique_keys(self):
+        state = crypto_utils.ratchet_init(os.urandom(32))
+        keys = set()
+        for _ in range(10):
+            msg_key, state = crypto_utils.ratchet_advance(state)
+            keys.add(msg_key)
+        assert len(keys) == 10
+
+    def test_dh_ratchet_step(self):
+        pk_a, sk_a = crypto_utils.generate_kem_keypair()
+        pk_b, sk_b = crypto_utils.generate_kem_keypair()
+        initial_ss = os.urandom(32)
+        state_a = crypto_utils.ratchet_init(initial_ss)
+        state_b = crypto_utils.ratchet_init(initial_ss)
+
+        encap, msg_key_a, state_a = crypto_utils.ratchet_dh_step(sk_a, pk_b, state_a)
+        msg_key_b, state_b = crypto_utils.ratchet_dh_receive(encap, sk_b, state_b)
+        assert msg_key_a == msg_key_b
+
+
+# ── Multi-Recipient Encryption ───────────────────────────────────────────────
+
+class TestMultiRecipient:
+    def test_multi_recipient_encrypt_decrypt(self):
+        pk1, sk1 = crypto_utils.generate_kem_keypair()
+        pk2, sk2 = crypto_utils.generate_kem_keypair()
+        plaintext = b"Hello, everyone!"
+        ct, nonce, tag, per_recipient = crypto_utils.multi_recipient_encrypt(
+            plaintext, [("alice", pk1), ("bob", pk2)]
+        )
+        assert len(per_recipient) == 2
+
+        decrypted1 = crypto_utils.multi_recipient_decrypt(
+            ct, nonce, tag,
+            per_recipient[0]["encapsulated_key"],
+            per_recipient[0]["wrapped_key"],
+            sk1,
+        )
+        assert decrypted1 == plaintext
+
+        decrypted2 = crypto_utils.multi_recipient_decrypt(
+            ct, nonce, tag,
+            per_recipient[1]["encapsulated_key"],
+            per_recipient[1]["wrapped_key"],
+            sk2,
+        )
+        assert decrypted2 == plaintext
+
+
 # ── Benchmarks ───────────────────────────────────────────────────────────────
 
 class TestBenchmarks:

@@ -44,10 +44,10 @@ jobs:
         run: |
           # Stop build on syntax errors or undefined names
           flake8 . --count --select=E9,F63,F7,F82 --show-source --statistics \
-            --exclude=venv,__pycache__,.git,tests
+            --exclude=venv,.venv,__pycache__,.git,tests,alembic,frontend,node_modules
           # Warnings only (don't fail on style)
           flake8 . --count --max-line-length=120 --statistics \
-            --exclude=venv,__pycache__,.git,tests --exit-zero
+            --exclude=venv,.venv,__pycache__,.git,tests,alembic,frontend,node_modules --exit-zero
 
       - name: Run tests
         run: |

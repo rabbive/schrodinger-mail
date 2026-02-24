@@ -1,4 +1,5 @@
 venv/
+.venv/
 __pycache__/
 *.pyc
 *.pyo
@@ -9,3 +10,8 @@ __pycache__/
 .cursor/
 *.plan.md
 .DS_Store
+node_modules/
+frontend/node_modules/
+nginx/certs/
+dist/
+static/

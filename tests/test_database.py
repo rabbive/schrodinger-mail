@@ -1,10 +1,16 @@
-"""Tests for database.py — SQLite CRUD operations, thread safety, and schema integrity."""
+"""Tests for database.py — SQLAlchemy CRUD operations, thread safety, and schema integrity."""
 
 import threading
 
 import pytest
 
 import database as db
+
+
+def _ensure_user(username):
+    """Create a minimal user if it doesn't already exist."""
+    if not db.user_exists(username):
+        db.save_user(username, b"pk1", b"sk1", b"pk2", b"sk2")
 
 
 # ── Users ────────────────────────────────────────────────────────────────────
@@ -42,11 +48,18 @@ class TestUsers:
         users = db.load_users()
         assert len(users) == 3
 
+    def test_encrypted_key_blob(self):
+        db.save_user("alice", b"pk", b"sk", b"pk", b"sk")
+        assert db.get_encrypted_key_blob("alice") is None
+        db.save_encrypted_key_blob("alice", b"encrypted-blob-data")
+        assert db.get_encrypted_key_blob("alice") == b"encrypted-blob-data"
+
 
 # ── Emails ───────────────────────────────────────────────────────────────────
 
 class TestEmails:
     def test_save_and_load_email(self):
+        _ensure_user("bob")
         eid = db.save_email("bob", "alice", "Hello", True, subject="Greetings")
         assert eid > 0
         emails = db.load_emails("bob")
@@ -56,29 +69,34 @@ class TestEmails:
         assert emails[0]["verified"] is True
 
     def test_email_defaults(self):
+        _ensure_user("bob")
         db.save_email("bob", "alice", "Body", False)
         emails = db.load_emails("bob")
         assert emails[0]["folder"] == "inbox"
         assert emails[0]["read"] is False
 
     def test_move_email(self):
+        _ensure_user("bob")
         eid = db.save_email("bob", "alice", "text", True)
         db.move_email(eid, "archive")
         emails = db.load_emails_by_folder("bob", "archive")
         assert len(emails) == 1
 
     def test_mark_read(self):
+        _ensure_user("bob")
         eid = db.save_email("bob", "alice", "text", True)
         db.mark_read(eid)
         emails = db.load_emails("bob")
         assert emails[0]["read"] is True
 
     def test_delete_permanent(self):
+        _ensure_user("bob")
         eid = db.save_email("bob", "alice", "text", True)
         db.delete_email_permanent(eid)
         assert len(db.load_emails("bob")) == 0
 
     def test_empty_trash(self):
+        _ensure_user("bob")
         db.save_email("bob", "alice", "msg1", True, folder="trash")
         db.save_email("bob", "alice", "msg2", True, folder="trash")
         db.save_email("bob", "alice", "msg3", True, folder="inbox")
@@ -87,6 +105,7 @@ class TestEmails:
         assert len(db.load_emails("bob")) == 1
 
     def test_search_emails(self):
+        _ensure_user("bob")
         db.save_email("bob", "alice", "Meeting tomorrow", True, subject="Meeting")
         db.save_email("bob", "eve", "Party invite", True, subject="Party")
         results = db.search_emails("bob", "Meeting")
@@ -94,11 +113,13 @@ class TestEmails:
         assert results[0]["subject"] == "Meeting"
 
     def test_search_case_insensitive(self):
+        _ensure_user("bob")
         db.save_email("bob", "alice", "IMPORTANT data", True, subject="Important")
         results = db.search_emails("bob", "important")
         assert len(results) == 1
 
     def test_folder_counts(self):
+        _ensure_user("bob")
         db.save_email("bob", "a", "x", True, folder="inbox")
         db.save_email("bob", "b", "y", True, folder="inbox")
         eid = db.save_email("bob", "c", "z", True, folder="sent")
@@ -110,12 +131,24 @@ class TestEmails:
         assert counts["sent"]["unread"] == 0
 
     def test_load_emails_by_folder(self):
+        _ensure_user("bob")
         db.save_email("bob", "a", "x", True, folder="inbox")
         db.save_email("bob", "b", "y", True, folder="sent")
         inbox = db.load_emails_by_folder("bob", "inbox")
         sent = db.load_emails_by_folder("bob", "sent")
         assert len(inbox) == 1
         assert len(sent) == 1
+
+    def test_threading(self):
+        _ensure_user("bob")
+        eid1 = db.save_email("bob", "alice", "Hello", True, subject="Hi",
+                             thread_id="thread-1")
+        eid2 = db.save_email("bob", "alice", "Reply", True, subject="Re: Hi",
+                             thread_id="thread-1", in_reply_to="msg-1")
+        thread = db.load_thread("thread-1")
+        assert len(thread) == 2
+        assert thread[0]["thread_id"] == "thread-1"
+        assert thread[1]["in_reply_to"] == "msg-1"
 
 
 # ── Pending Messages ─────────────────────────────────────────────────────────
@@ -139,6 +172,7 @@ class TestPending:
 
 class TestDrafts:
     def test_save_and_load_draft(self):
+        _ensure_user("alice")
         did = db.save_draft("alice", "bob", "Subject", "Body text")
         assert did > 0
         drafts = db.load_drafts("alice")
@@ -146,6 +180,7 @@ class TestDrafts:
         assert drafts[0]["subject"] == "Subject"
 
     def test_update_draft(self):
+        _ensure_user("alice")
         did = db.save_draft("alice", "bob", "Draft1", "Body1")
         db.save_draft("alice", "bob", "Updated", "New body", draft_id=did)
         drafts = db.load_drafts("alice")
@@ -153,11 +188,14 @@ class TestDrafts:
         assert drafts[0]["subject"] == "Updated"
 
     def test_delete_draft(self):
+        _ensure_user("alice")
         did = db.save_draft("alice", "bob", "X", "Y")
         db.delete_draft(did, "alice")
         assert len(db.load_drafts("alice")) == 0
 
     def test_draft_isolation(self):
+        _ensure_user("alice")
+        _ensure_user("charlie")
         db.save_draft("alice", "bob", "A", "B")
         db.save_draft("charlie", "bob", "C", "D")
         assert len(db.load_drafts("alice")) == 1
@@ -168,6 +206,7 @@ class TestDrafts:
 
 class TestContacts:
     def test_save_and_load_contact(self):
+        _ensure_user("alice")
         cid = db.save_contact("alice", "Bob", "bob", kyber_fp="abc", dilithium_fp="def")
         assert cid > 0
         contacts = db.load_contacts("alice")
@@ -176,11 +215,13 @@ class TestContacts:
         assert contacts[0]["kyber_fingerprint"] == "abc"
 
     def test_delete_contact(self):
+        _ensure_user("alice")
         cid = db.save_contact("alice", "Bob")
         db.delete_contact(cid, "alice")
         assert len(db.load_contacts("alice")) == 0
 
     def test_verify_contact(self):
+        _ensure_user("alice")
         cid = db.save_contact("alice", "Bob")
         db.update_contact_verified(cid, True)
         contacts = db.load_contacts("alice")
@@ -191,6 +232,7 @@ class TestContacts:
 
 class TestAttachments:
     def test_save_and_load_attachment(self):
+        _ensure_user("bob")
         eid = db.save_email("bob", "alice", "text", True)
         aid = db.save_attachment(eid, "doc.pdf", "application/pdf", b"PDF_DATA")
         assert aid > 0
@@ -199,6 +241,7 @@ class TestAttachments:
         assert atts[0]["filename"] == "doc.pdf"
 
     def test_get_attachment_data(self):
+        _ensure_user("bob")
         eid = db.save_email("bob", "alice", "text", True)
         aid = db.save_attachment(eid, "f.txt", "text/plain", b"content")
         data = db.get_attachment_data(aid)
@@ -208,6 +251,14 @@ class TestAttachments:
 
     def test_missing_attachment(self):
         assert db.get_attachment_data(99999) is None
+
+    def test_encrypted_attachment(self):
+        _ensure_user("bob")
+        eid = db.save_email("bob", "alice", "text", True)
+        key = b"0" * 32
+        aid = db.save_attachment(eid, "secret.bin", "application/octet-stream", b"data", encryption_key=key)
+        data = db.get_attachment_data(aid)
+        assert data["encryption_key"] == key
 
 
 # ── Sessions ─────────────────────────────────────────────────────────────────
@@ -264,7 +315,7 @@ class TestSeenIds:
 
     def test_duplicate_ignored(self):
         db.save_seen_id("alice", "msg-001")
-        db.save_seen_id("alice", "msg-001")  # no error
+        db.save_seen_id("alice", "msg-001")
         ids = db.load_seen_ids("alice")
         assert len(ids) == 1
 
@@ -285,14 +336,37 @@ class TestSettings:
         assert settings["shortcuts"] is True
 
     def test_save_and_get_settings(self):
+        _ensure_user("alice")
         db.save_settings("alice", signature="-- Alice")
         settings = db.get_settings("alice")
         assert settings["signature"] == "-- Alice"
 
     def test_update_settings(self):
+        _ensure_user("alice")
         db.save_settings("alice", theme="light")
         db.save_settings("alice", theme="dark")
         assert db.get_settings("alice")["theme"] == "dark"
+
+
+# ── Ratchet States ───────────────────────────────────────────────────────────
+
+class TestRatchetStates:
+    def test_save_and_load(self):
+        db.save_ratchet_state("alice", "bob", b"chain-key-data", 5)
+        state = db.load_ratchet_state("alice", "bob")
+        assert state is not None
+        assert state["chain_key"] == b"chain-key-data"
+        assert state["step"] == 5
+
+    def test_update_existing(self):
+        db.save_ratchet_state("alice", "bob", b"old-key", 1)
+        db.save_ratchet_state("alice", "bob", b"new-key", 2)
+        state = db.load_ratchet_state("alice", "bob")
+        assert state["chain_key"] == b"new-key"
+        assert state["step"] == 2
+
+    def test_missing_state(self):
+        assert db.load_ratchet_state("x", "y") is None
 
 
 # ── Thread Safety ────────────────────────────────────────────────────────────

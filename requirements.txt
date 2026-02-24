@@ -1,25 +1,36 @@
 # Schrödinger Mail — Dependencies
 # ================================
-# liboqs-python: Python bindings for Open Quantum Safe (OQS) library.
-#   Provides post-quantum KEM (Kyber) and Signature (Dilithium) algorithms.
+
+# Post-quantum cryptography (Kyber768, Dilithium3)
 liboqs-python>=0.9.0
 
-# pycryptodome: Cryptographic primitives for Python.
-#   Used for AES-256-GCM symmetric encryption (Data Encapsulation Mechanism).
+# AES-256-GCM symmetric encryption + RSA
 pycryptodome>=3.20.0
 
-# Flask: Lightweight web framework.
-#   Serves the email client UI and REST API endpoints.
+# Web framework
 flask>=3.0.0
 
-# flask-login: Session management and authentication.
+# Session management
 flask-login>=0.6.0
 
-# argon2-cffi: Argon2id password hashing.
+# Argon2id password hashing
 argon2-cffi>=23.1.0
 
-# flask-limiter: Rate limiting for API endpoints.
+# Rate limiting
 flask-limiter>=3.5.0
 
-# flask-wtf: CSRF protection.
+# CSRF protection
 flask-wtf>=1.2.0
+
+# ORM (supports SQLite + PostgreSQL)
+sqlalchemy>=2.0.0
+
+# PostgreSQL adapter (optional, for production)
+psycopg2-binary>=2.9.0
+
+# WebSocket support
+flask-socketio>=5.3.0
+
+# Async WebSocket transport
+gevent>=24.2.0
+gevent-websocket>=0.10.1

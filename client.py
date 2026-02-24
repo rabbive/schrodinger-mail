@@ -4,14 +4,15 @@ client.py — Schrödinger Mail Client
 =========================================
 Implements the Sender and Receiver workflows of the Signed KEM-DEM architecture
 with support for reply/forward, encrypted subjects, password-protected messages,
-and persistent replay detection.
+persistent replay detection, email threading, multi-recipient encryption,
+and forward secrecy.
 """
 
 from __future__ import annotations
 
 import uuid
 from datetime import datetime, timezone
-from typing import Any, Dict, List, Optional, Set
+from typing import Any, Dict, List, Optional, Set, Tuple
 
 import crypto_utils
 from server import Server
@@ -32,6 +33,7 @@ class Client:
             dilithium_pk=self.dilithium_pk,
         )
         self.seen_message_ids: Set[str] = set()
+        self.ratchet_states: Dict[str, Dict[str, Any]] = {}
 
     @classmethod
     def from_keys(
@@ -51,6 +53,7 @@ class Client:
         obj.dilithium_pk = dilithium_pk
         obj.dilithium_sk = dilithium_sk
         obj.seen_message_ids = seen_ids or set()
+        obj.ratchet_states = {}
         if rsa_pk and rsa_sk:
             obj.rsa_pk = rsa_pk
             obj.rsa_sk = rsa_sk
@@ -101,10 +104,19 @@ class Client:
     # Sender Workflow
     # ------------------------------------------------------------------
 
-    def _build_plaintext(self, subject: str, body: str) -> str:
+    def _build_plaintext(
+        self, subject: str, body: str,
+        in_reply_to: Optional[str] = None,
+        thread_id: Optional[str] = None,
+    ) -> str:
         msg_id = str(uuid.uuid4())
+        if thread_id is None:
+            thread_id = msg_id
         ts = datetime.now(timezone.utc).isoformat()
-        return f"Message-ID: {msg_id}\nTimestamp: {ts}\nSubject: {subject}\n\n{body}"
+        headers = f"Message-ID: {msg_id}\nThread-ID: {thread_id}\nTimestamp: {ts}"
+        if in_reply_to:
+            headers += f"\nIn-Reply-To: {in_reply_to}"
+        return f"{headers}\nSubject: {subject}\n\n{body}"
 
     def send_email(self, recipient: str, subject: str, body: str) -> Dict[str, Any]:
         """Compose, sign, encrypt, and send an email."""
@@ -619,3 +631,148 @@ class Client:
         plaintext_decoded = plaintext_bytes.decode("utf-8")
         return {"sender": sender, "verified": True, "plaintext": plaintext_decoded,
                 "password_protected": True}, steps
+
+    # ------------------------------------------------------------------
+    # Multi-Recipient Send
+    # ------------------------------------------------------------------
+
+    def send_email_multi_recipient(
+        self,
+        recipients: List[str],
+        subject: str,
+        body: str,
+        encrypt_subject: bool = False,
+    ) -> Dict[str, Any]:
+        """Send an encrypted email to multiple recipients."""
+        steps: List[Dict[str, Any]] = []
+
+        recipient_keys_list: List[Tuple[str, bytes]] = []
+        for r in recipients:
+            rk = self.server.get_public_keys(r)
+            recipient_keys_list.append((r, rk["kyber_pk"]))
+        steps.append({
+            "step": 1, "title": "Fetch All Recipients' Kyber Public Keys",
+            "description": f"Retrieved Kyber768 public keys for {len(recipients)} recipients.",
+            "details": {"recipients": recipients},
+            "status": "success",
+        })
+
+        plaintext_str = self._build_plaintext(subject, body)
+        plaintext: bytes = plaintext_str.encode("utf-8")
+
+        signature: bytes = crypto_utils.sign(plaintext, self.dilithium_sk)
+        payload: bytes = crypto_utils.build_payload(signature, plaintext)
+        steps.append({
+            "step": 2, "title": "Sign and Build Payload",
+            "description": f"Signed {len(plaintext)}-byte plaintext and built payload.",
+            "details": {"signature_size": len(signature), "payload_size": len(payload)},
+            "status": "success",
+        })
+
+        ct, nonce, tag, per_recipient = crypto_utils.multi_recipient_encrypt(
+            payload, recipient_keys_list,
+        )
+        steps.append({
+            "step": 3, "title": "Multi-Recipient Encryption",
+            "description": f"Encrypted payload with per-recipient key wrapping for {len(recipients)} users.",
+            "details": {
+                "ciphertext_bytes": len(ct),
+                "recipients_count": len(per_recipient),
+            },
+            "status": "success",
+        })
+
+        for pr in per_recipient:
+            package = {
+                "ciphertext": ct, "nonce": nonce, "tag": tag,
+                "encapsulated_key": pr["encapsulated_key"],
+                "wrapped_key": pr["wrapped_key"],
+                "multi_recipient": True,
+            }
+            self.server.send_message(
+                sender=self.username, recipient=pr["username"], package=package,
+            )
+        steps.append({
+            "step": 4, "title": "Deliver to All Recipients",
+            "description": f"Delivered encrypted packages to {len(recipients)} mailboxes.",
+            "details": {"recipients": recipients},
+            "status": "success",
+        })
+
+        return {
+            "steps": steps,
+            "plaintext_str": plaintext_str,
+            "recipients": recipients,
+        }
+
+    # ------------------------------------------------------------------
+    # Forward Secrecy
+    # ------------------------------------------------------------------
+
+    def send_email_with_forward_secrecy(
+        self, recipient: str, subject: str, body: str,
+    ) -> Dict[str, Any]:
+        """Send using the ratcheting protocol for forward secrecy."""
+        steps: List[Dict[str, Any]] = []
+        recipient_keys = self.server.get_public_keys(recipient)
+        recipient_kyber_pk = recipient_keys["kyber_pk"]
+
+        if recipient not in self.ratchet_states:
+            encap, shared_secret = crypto_utils.kem_encapsulate(recipient_kyber_pk)
+            self.ratchet_states[recipient] = crypto_utils.ratchet_init(shared_secret)
+            steps.append({
+                "step": 1, "title": "Initialize Ratchet (first message)",
+                "description": "No existing ratchet state. Created new chain via Kyber KEM.",
+                "details": {"encapsulated_key_bytes": len(encap)},
+                "status": "success",
+            })
+            initial_encap = encap
+        else:
+            initial_encap = None
+            steps.append({
+                "step": 1, "title": "Ratchet State Loaded",
+                "description": f"Continuing existing ratchet chain (step {self.ratchet_states[recipient].get('step', 0)}).",
+                "details": {},
+                "status": "success",
+            })
+
+        encap, msg_key, new_state = crypto_utils.ratchet_dh_step(
+            self.kyber_sk, recipient_kyber_pk, self.ratchet_states[recipient],
+        )
+        self.ratchet_states[recipient] = new_state
+        steps.append({
+            "step": 2, "title": "DH Ratchet Step (Kyber KEM)",
+            "description": "Advanced the ratchet with a new Kyber DH exchange. Old keys deleted.",
+            "details": {"new_chain_step": new_state["step"]},
+            "status": "success",
+        })
+
+        plaintext_str = self._build_plaintext(subject, body)
+        plaintext = plaintext_str.encode("utf-8")
+        signature = crypto_utils.sign(plaintext, self.dilithium_sk)
+        payload = crypto_utils.build_payload(signature, plaintext)
+
+        ct, nonce, tag = crypto_utils.aes_gcm_encrypt(payload, msg_key)
+        steps.append({
+            "step": 3, "title": "Encrypt with Ratchet-Derived Key",
+            "description": f"Encrypted {len(payload)}-byte payload with ephemeral message key.",
+            "details": {"ciphertext_bytes": len(ct), "forward_secrecy": True},
+            "status": "success",
+        })
+
+        package = {
+            "encapsulated_key": encap,
+            "ciphertext": ct, "nonce": nonce, "tag": tag,
+            "forward_secrecy": True,
+        }
+        if initial_encap:
+            package["initial_encap"] = initial_encap
+        self.server.send_message(sender=self.username, recipient=recipient, package=package)
+        steps.append({
+            "step": 4, "title": "Send Forward-Secret Package",
+            "description": f"Delivered to {recipient}. Message key is ephemeral and will be deleted.",
+            "details": {"security": "Forward Secrecy enabled"},
+            "status": "success",
+        })
+
+        return {"package": package, "steps": steps, "plaintext_str": plaintext_str}

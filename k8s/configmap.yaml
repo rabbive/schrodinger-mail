@@ -1,0 +1,13 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: schrodinger-mail-config
+  namespace: schrodinger-mail
+data:
+  QEC_PORT: "5001"
+  QEC_DEBUG: "0"
+  QEC_LOG_LEVEL: "INFO"
+  QEC_LOG_FORMAT: "json"
+  QEC_METRICS: "1"
+  QEC_ZK_MODE: "1"
+  QEC_FORWARD_SECRECY: "1"

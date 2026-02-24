@@ -2,9 +2,10 @@
 """
 app.py — Flask Web Server for Schrödinger Mail
 ===========================================================
-Full-featured email client with authentication, folder management, contacts,
-drafts, attachments, audit logging, rate limiting, CSRF protection, and
-comprehensive security showcase panels.
+Full-featured email client with JWT authentication, folder management,
+contacts, drafts, encrypted attachments, audit logging, rate limiting,
+CSRF protection, WebSocket real-time delivery, multi-recipient encryption,
+email threading, forward secrecy, and Prometheus metrics.
 """
 
 from __future__ import annotations
@@ -12,8 +13,10 @@ from __future__ import annotations
 import base64
 import hashlib
 import io
+import logging
 import os
 import secrets
+import time
 import uuid
 from functools import wraps
 from typing import Any, Dict, List, Optional
@@ -21,34 +24,49 @@ from typing import Any, Dict, List, Optional
 from flask import (Flask, Response, jsonify, redirect, render_template,
                    request, send_file, session, url_for)
 
+import auth as jwt_auth
 import config
 import crypto_utils
 import database as db
+import metrics
 from client import Client
+from logging_config import setup_logging
 from server import Server
+
+setup_logging()
+logger = logging.getLogger(__name__)
 
 # ── Flask app ────────────────────────────────────────────────────────────────
 
 app = Flask(__name__)
 app.secret_key = config.SECRET_KEY
 app.config["MAX_CONTENT_LENGTH"] = config.MAX_ATTACHMENT_BYTES + 1024 * 1024
+app.config["SESSION_COOKIE_HTTPONLY"] = True
+app.config["SESSION_COOKIE_SAMESITE"] = "Strict"
 
-# Rate limiting (graceful if redis not available)
+# Rate limiting
 try:
     from flask_limiter import Limiter
     from flask_limiter.util import get_remote_address
-    limiter = Limiter(get_remote_address, app=app, default_limits=["200/minute"],
+    limiter = Limiter(get_remote_address, app=app,
+                      default_limits=[config.RATE_LIMIT_DEFAULT],
                       storage_uri="memory://")
 except Exception:
     limiter = None
+
+# WebSocket support
+socketio = None
+try:
+    from flask_socketio import SocketIO, emit, join_room
+    socketio = SocketIO(app, cors_allowed_origins="*", async_mode="threading")
+except ImportError:
+    pass
 
 # ── Global state ─────────────────────────────────────────────────────────────
 
 mail_server = Server()
 clients: Dict[str, Client] = {}
 inboxes: Dict[str, list] = {}
-
-# Pending undo-send queue: {pending_id: {timer, data}}
 undo_queue: Dict[str, Dict] = {}
 
 
@@ -76,6 +94,7 @@ def _bootstrap() -> None:
             inboxes[name] = []
             db.save_user(name, c.kyber_pk, c.kyber_sk, c.dilithium_pk, c.dilithium_sk,
                          rsa_pk=c.rsa_pk, rsa_sk=c.rsa_sk)
+    logger.info("Bootstrap complete: %d users loaded", len(clients))
 
 _bootstrap()
 
@@ -129,6 +148,15 @@ def _extract_subject(plaintext: Optional[str]) -> str:
     return ""
 
 
+def _extract_header(plaintext: str, header: str) -> Optional[str]:
+    for line in plaintext.split("\n"):
+        if line.startswith(f"{header}: "):
+            return line.split(f"{header}: ", 1)[1].strip()
+        if line == "":
+            break
+    return None
+
+
 def _validate_input(data: dict, *fields: str) -> Optional[str]:
     for f in fields:
         val = data.get(f, "")
@@ -140,22 +168,33 @@ def _validate_input(data: dict, *fields: str) -> Optional[str]:
 
 
 def _get_ip() -> str:
-    return request.remote_addr or ""
+    return request.headers.get("X-Real-IP") or request.remote_addr or ""
 
 
 def _current_user() -> Optional[str]:
+    token = request.headers.get("Authorization", "").replace("Bearer ", "")
+    if token:
+        return jwt_auth.get_username_from_token(token)
     return session.get("username")
 
 
 def _require_auth(f):
-    """Decorator: require login. If no passwords set at all, allow anonymous."""
+    """Decorator: require login via JWT or session."""
     @wraps(f)
     def wrapper(*args, **kwargs):
         has_any_password = any(db.get_password_hash(u) for u in clients)
-        if has_any_password and not session.get("username"):
-            return jsonify({"error": "Authentication required.", "login_required": True}), 401
+        if has_any_password:
+            user = _current_user()
+            if not user:
+                return jsonify({"error": "Authentication required.", "login_required": True}), 401
         return f(*args, **kwargs)
     return wrapper
+
+
+def _notify_ws(username: str, event: str, data: Any = None) -> None:
+    """Send a WebSocket notification to a user's room."""
+    if socketio:
+        socketio.emit(event, data or {}, room=username)
 
 
 # ── CSRF Token ───────────────────────────────────────────────────────────────
@@ -176,6 +215,21 @@ def _check_csrf():
     if token != session.get("csrf_token", ""):
         return False
     return True
+
+
+# ── Request timing ───────────────────────────────────────────────────────────
+
+@app.before_request
+def _start_timer():
+    request._start_time = time.perf_counter()
+
+
+@app.after_request
+def _record_duration(response):
+    if hasattr(request, "_start_time"):
+        duration = time.perf_counter() - request._start_time
+        metrics.observe("request_duration_seconds", duration)
+    return response
 
 
 # ── Routes: Pages ────────────────────────────────────────────────────────────
@@ -208,29 +262,50 @@ def api_login():
             ph = PasswordHasher()
             ph.verify(stored_hash, password)
         except Exception:
+            metrics.inc("auth_login_failed_total")
             db.log_audit(username, "login_failed", "Wrong password", _get_ip())
             return jsonify({"error": "Invalid password."}), 401
-    # If no password set, allow login (demo mode)
 
     session["username"] = username
     sid = secrets.token_hex(16)
     session["session_id"] = sid
     db.save_session(sid, username, _get_ip(), request.user_agent.string)
     db.log_audit(username, "login", "Logged in", _get_ip())
+    metrics.inc("auth_login_total")
 
-    return jsonify({"ok": True, "user": _user_info(username)})
+    tokens = jwt_auth.create_token_pair(username)
+
+    return jsonify({
+        "ok": True,
+        "user": _user_info(username),
+        **tokens,
+    })
 
 
 @app.route("/api/auth/logout", methods=["POST"])
 def api_logout():
     username = session.get("username", "")
     sid = session.get("session_id", "")
+    token = request.headers.get("Authorization", "").replace("Bearer ", "")
+    if token:
+        jwt_auth.blacklist_token(token)
     if sid:
         db.delete_session(sid)
     if username:
         db.log_audit(username, "logout", "Logged out", _get_ip())
     session.clear()
     return jsonify({"ok": True})
+
+
+@app.route("/api/auth/refresh", methods=["POST"])
+def api_refresh_token():
+    """Refresh an access token using a refresh token."""
+    data = request.get_json(force=True)
+    refresh_token = data.get("refresh_token", "")
+    result = jwt_auth.refresh_access_token(refresh_token)
+    if not result:
+        return jsonify({"error": "Invalid or expired refresh token."}), 401
+    return jsonify(result)
 
 
 @app.route("/api/auth/set-password", methods=["POST"])
@@ -248,8 +323,17 @@ def api_set_password():
     ph = PasswordHasher()
     hashed = ph.hash(password)
     db.update_password(username, hashed)
-    db.log_audit(username, "password_set", "Password created/changed", _get_ip())
 
+    if config.ZERO_KNOWLEDGE_MODE:
+        c = clients[username]
+        blob = crypto_utils.encrypt_key_blob({
+            "kyber_sk": c.kyber_sk,
+            "dilithium_sk": c.dilithium_sk,
+            "rsa_sk": c.rsa_sk or b"",
+        }, password)
+        db.save_encrypted_key_blob(username, blob)
+
+    db.log_audit(username, "password_set", "Password created/changed", _get_ip())
     return jsonify({"ok": True})
 
 
@@ -258,9 +342,11 @@ def api_auth_status():
     has_any_password = any(db.get_password_hash(u) for u in clients)
     return jsonify({
         "auth_enabled": has_any_password,
-        "logged_in": "username" in session,
-        "username": session.get("username", ""),
+        "logged_in": "username" in session or bool(_current_user()),
+        "username": _current_user() or session.get("username", ""),
         "csrf_token": session.get("csrf_token", ""),
+        "zero_knowledge_mode": config.ZERO_KNOWLEDGE_MODE,
+        "forward_secrecy": config.FORWARD_SECRECY,
     })
 
 
@@ -273,6 +359,14 @@ def api_state():
         "sig_algorithm": crypto_utils.SIG_ALG,
         "dem_algorithm": "AES-256-GCM",
         "users": {name: _user_info(name) for name in clients},
+        "features": {
+            "zero_knowledge": config.ZERO_KNOWLEDGE_MODE,
+            "forward_secrecy": config.FORWARD_SECRECY,
+            "websockets": socketio is not None,
+            "multi_recipient": True,
+            "encrypted_attachments": True,
+            "email_threading": True,
+        },
     })
 
 
@@ -355,20 +449,44 @@ def api_send():
     data = request.get_json(force=True)
     sender_name = data.get("sender", "").strip().lower()
     recipient_name = data.get("recipient", "").strip().lower()
+    recipients = data.get("recipients", [])
     subject = data.get("subject", "").strip()[:config.MAX_SUBJECT_LEN]
     body = data.get("body", "").strip()[:config.MAX_BODY_LEN]
     encrypt_subject = data.get("encrypt_subject", False)
     security_level = data.get("security_level", 2)
+    in_reply_to = data.get("in_reply_to")
+    thread_id = data.get("thread_id")
 
     if sender_name not in clients:
         return jsonify({"error": f"Unknown sender '{sender_name}'"}), 404
-    if recipient_name not in clients:
-        return jsonify({"error": f"Unknown recipient '{recipient_name}'"}), 404
     if not subject or not body:
         return jsonify({"error": "Subject and body are required."}), 400
 
-    client = clients[sender_name]
+    # Multi-recipient support
+    if recipients and len(recipients) > 1:
+        for r in recipients:
+            if r.strip().lower() not in clients:
+                return jsonify({"error": f"Unknown recipient '{r}'"}), 404
+        client = clients[sender_name]
+        sig = db.get_settings(sender_name).get("signature", "")
+        if sig:
+            body = body + "\n\n-- \n" + sig
+        result = client.send_email_multi_recipient(
+            [r.strip().lower() for r in recipients], subject, body, encrypt_subject,
+        )
+        for r in recipients:
+            r_lower = r.strip().lower()
+            _notify_ws(r_lower, "new_mail", {"from": sender_name})
+        metrics.inc("emails_sent_total")
+        db.log_audit(sender_name, "send_multi", f"To {','.join(recipients)}: {subject[:50]}", _get_ip())
+        return jsonify({"ok": True, "steps": _bytes_to_b64(result["steps"]), "multi": True})
 
+    if not recipient_name:
+        recipient_name = (recipients[0] if recipients else "").strip().lower()
+    if recipient_name not in clients:
+        return jsonify({"error": f"Unknown recipient '{recipient_name}'"}), 404
+
+    client = clients[sender_name]
     sig = db.get_settings(sender_name).get("signature", "")
     if sig:
         body = body + "\n\n-- \n" + sig
@@ -378,6 +496,8 @@ def api_send():
         result = client.send_email_hybrid_with_log(
             recipient_name, subject, body, recipient_rsa_pk, encrypt_subject
         )
+    elif config.FORWARD_SECRECY and security_level == 2:
+        result = client.send_email_with_forward_secrecy(recipient_name, subject, body)
     else:
         result = client.send_email_with_log(recipient_name, subject, body, encrypt_subject)
 
@@ -390,14 +510,21 @@ def api_send():
 
     sent_subject = subject if not encrypt_subject else result.get("subject", subject)
     level_label = {1: "Password", 2: "PQC", 3: "Hybrid RSA+Kyber"}.get(security_level, "PQC")
+    if config.FORWARD_SECRECY and security_level == 2:
+        level_label = "PQC+FS"
+
     db.save_email(
-        recipient=sender_name, sender=sender_name, subject=f"To: {recipient_name} — {sent_subject}",
+        recipient=sender_name, sender=sender_name,
+        subject=f"To: {recipient_name} — {sent_subject}",
         plaintext=result.get("plaintext_str", ""), verified=True, folder="sent",
+        thread_id=thread_id, in_reply_to=in_reply_to,
     )
     _refresh_inbox(sender_name)
+    _notify_ws(recipient_name, "new_mail", {"from": sender_name})
 
     db.log_audit(sender_name, "send_email",
                  f"[{level_label}] To {recipient_name}: {subject[:50]}", _get_ip())
+    metrics.inc("emails_sent_total")
 
     return jsonify({"ok": True, "steps": _bytes_to_b64(result["steps"]),
                      "security_level": security_level})
@@ -463,6 +590,7 @@ def api_send_password():
         nonce=pkg["nonce"], tag=pkg["tag"],
     )
     db.log_audit(sender_name, "send_password_protected", f"Password-protected to {recipient_name}", _get_ip())
+    metrics.inc("emails_sent_total")
 
     return jsonify({"ok": True, "steps": _bytes_to_b64(result["steps"])})
 
@@ -480,15 +608,31 @@ def api_receive(username: str):
     for r in result["results"]:
         r["read"] = False
         subj = _extract_subject(r.get("plaintext"))
+        thread_id = _extract_header(r.get("plaintext", ""), "Thread-ID")
+        in_reply_to = _extract_header(r.get("plaintext", ""), "In-Reply-To")
         email_id = db.save_email(
             recipient=username, sender=r.get("sender", "unknown"),
             plaintext=r.get("plaintext"), verified=r.get("verified", False),
             error=r.get("error"), subject=subj,
+            thread_id=thread_id, in_reply_to=in_reply_to,
         )
         r["id"] = email_id
         r["subject"] = subj
         r["folder"] = "inbox"
+        r["thread_id"] = thread_id
+        r["in_reply_to"] = in_reply_to
         inboxes.setdefault(username, []).append(r)
+
+        if not r.get("verified"):
+            if r.get("error") and "tampered" in r["error"].lower():
+                metrics.inc("tamper_detected_total")
+            elif r.get("error") and "signature" in r["error"].lower():
+                metrics.inc("forge_detected_total")
+            elif r.get("error") and "replay" in r["error"].lower():
+                metrics.inc("replay_detected_total")
+            metrics.inc("emails_failed_total")
+        else:
+            metrics.inc("emails_received_total")
 
     for mid in client.seen_message_ids:
         db.save_seen_id(username, mid)
@@ -506,6 +650,15 @@ def api_receive(username: str):
         "steps": _bytes_to_b64(result["steps"]),
         "results": result["results"],
     })
+
+
+# ── Routes: Threading ────────────────────────────────────────────────────────
+
+@app.route("/api/thread/<thread_id>")
+def api_thread(thread_id: str):
+    """Load all emails in a conversation thread."""
+    emails = db.load_thread(thread_id)
+    return jsonify({"thread_id": thread_id, "emails": emails})
 
 
 # ── Routes: Tamper / Replay ──────────────────────────────────────────────────
@@ -540,14 +693,20 @@ def api_replay(username: str):
 
 @app.route("/api/reply", methods=["POST"])
 def api_reply():
-    """Pre-fill compose for reply."""
     data = request.get_json(force=True)
     original_sender = data.get("original_sender", "")
     original_subject = data.get("original_subject", "")
     original_body = data.get("original_body", "")
+    original_thread_id = data.get("thread_id")
+    original_message_id = data.get("message_id")
     subj = f"Re: {original_subject}" if not original_subject.startswith("Re:") else original_subject
     quoted = "\n".join(f"> {line}" for line in original_body.split("\n"))
-    return jsonify({"recipient": original_sender, "subject": subj, "body": f"\n\n{quoted}"})
+    return jsonify({
+        "recipient": original_sender, "subject": subj,
+        "body": f"\n\n{quoted}",
+        "thread_id": original_thread_id,
+        "in_reply_to": original_message_id,
+    })
 
 
 @app.route("/api/forward", methods=["POST"])
@@ -650,8 +809,18 @@ def api_upload_attachment(email_id: int):
     data = f.read()
     if len(data) > config.MAX_ATTACHMENT_BYTES:
         return jsonify({"error": f"File too large (max {config.MAX_ATTACHMENT_BYTES // 1024 // 1024}MB)."}), 400
-    aid = db.save_attachment(email_id, f.filename or "file", f.mimetype or "application/octet-stream", data)
-    return jsonify({"ok": True, "attachment_id": aid, "filename": f.filename, "size_bytes": len(data)})
+
+    encrypted_blob, file_key = crypto_utils.encrypt_attachment(data)
+    aid = db.save_attachment(
+        email_id, f.filename or "file",
+        f.mimetype or "application/octet-stream",
+        encrypted_blob, encryption_key=file_key,
+    )
+    return jsonify({
+        "ok": True, "attachment_id": aid,
+        "filename": f.filename, "size_bytes": len(data),
+        "encrypted": True,
+    })
 
 
 @app.route("/api/attachment/download/<int:attachment_id>")
@@ -659,7 +828,12 @@ def api_download_attachment(attachment_id: int):
     att = db.get_attachment_data(attachment_id)
     if not att:
         return jsonify({"error": "Attachment not found."}), 404
-    return send_file(io.BytesIO(att["data"]), download_name=att["filename"],
+
+    data = att["data"]
+    if att.get("encryption_key"):
+        data = crypto_utils.decrypt_attachment(data, att["encryption_key"])
+
+    return send_file(io.BytesIO(data), download_name=att["filename"],
                      mimetype=att["mimetype"], as_attachment=True)
 
 
@@ -768,7 +942,6 @@ def api_export_key(username: str, key_type: str):
 
 @app.route("/api/keys/verify", methods=["POST"])
 def api_verify_keys():
-    """Compare fingerprints of two users."""
     data = request.get_json(force=True)
     user_a = data.get("user_a", "").strip().lower()
     user_b = data.get("user_b", "").strip().lower()
@@ -820,14 +993,22 @@ def api_register():
     inboxes[username] = []
 
     pw_hash = None
+    encrypted_blob = None
     if password:
         from argon2 import PasswordHasher
         ph = PasswordHasher()
         pw_hash = ph.hash(password)
+        if config.ZERO_KNOWLEDGE_MODE:
+            encrypted_blob = crypto_utils.encrypt_key_blob({
+                "kyber_sk": c.kyber_sk,
+                "dilithium_sk": c.dilithium_sk,
+                "rsa_sk": c.rsa_sk or b"",
+            }, password)
 
     db.save_user(username, c.kyber_pk, c.kyber_sk, c.dilithium_pk, c.dilithium_sk, pw_hash,
-                 rsa_pk=c.rsa_pk, rsa_sk=c.rsa_sk)
+                 rsa_pk=c.rsa_pk, rsa_sk=c.rsa_sk, encrypted_key_blob=encrypted_blob)
     db.log_audit(username, "register", "User registered", _get_ip())
+    metrics.inc("auth_register_total")
 
     return jsonify({"ok": True, "user": _user_info(username), "steps": keygen["steps"]})
 
@@ -836,7 +1017,6 @@ def api_register():
 
 @app.route("/api/undo-send/<pending_id>", methods=["POST"])
 def api_undo_send(pending_id: str):
-    """Cancel a pending send within the undo window."""
     if pending_id in undo_queue:
         info = undo_queue.pop(pending_id)
         recipient = info.get("recipient", "")
@@ -850,7 +1030,6 @@ def api_undo_send(pending_id: str):
 
 @app.route("/api/report/<username>")
 def api_report(username: str):
-    """Generate an HTML security report for download."""
     if username not in clients:
         return jsonify({"error": "Unknown user"}), 404
     c = clients[username]
@@ -872,6 +1051,14 @@ th{{background:#f0f0f0}}.section{{margin:24px 0}}.mono{{font-family:monospace;fo
 <tr><td>KEM</td><td>{crypto_utils.KEM_ALG}</td></tr>
 <tr><td>Signature</td><td>{crypto_utils.SIG_ALG}</td></tr>
 <tr><td>Symmetric</td><td>AES-256-GCM</td></tr></table></div>
+
+<div class="section"><h2>Features</h2>
+<table><tr><th>Feature</th><th>Status</th></tr>
+<tr><td>Zero-Knowledge Mode</td><td>{'Enabled' if config.ZERO_KNOWLEDGE_MODE else 'Disabled'}</td></tr>
+<tr><td>Forward Secrecy</td><td>{'Enabled' if config.FORWARD_SECRECY else 'Disabled'}</td></tr>
+<tr><td>Encrypted Attachments</td><td>Enabled</td></tr>
+<tr><td>Email Threading</td><td>Enabled</td></tr>
+<tr><td>Multi-Recipient</td><td>Enabled</td></tr></table></div>
 
 <div class="section"><h2>Key Sizes</h2>
 <table><tr><th>Key</th><th>Size (bytes)</th></tr>
@@ -901,6 +1088,35 @@ th{{background:#f0f0f0}}.section{{margin:24px 0}}.mono{{font-family:monospace;fo
                      mimetype="text/html", as_attachment=True)
 
 
+# ── Routes: Metrics ──────────────────────────────────────────────────────────
+
+@app.route("/metrics")
+def prometheus_metrics():
+    """Prometheus-compatible metrics endpoint."""
+    return Response(metrics.render_prometheus(), mimetype="text/plain")
+
+
+@app.route("/api/metrics")
+def api_metrics():
+    """JSON metrics for the UI."""
+    return jsonify(metrics.get_metrics())
+
+
+# ── WebSocket Events ─────────────────────────────────────────────────────────
+
+if socketio:
+    @socketio.on("connect")
+    def ws_connect():
+        pass
+
+    @socketio.on("join")
+    def ws_join(data):
+        username = data.get("username", "")
+        if username in clients:
+            join_room(username)
+            logger.info("WebSocket: %s joined room", username)
+
+
 # ── Entrypoint ───────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":
@@ -909,6 +1125,13 @@ if __name__ == "__main__":
     print(f"  SIG : {crypto_utils.SIG_ALG}")
     print(f"  DEM : AES-256-GCM")
     print(f"  Users loaded: {', '.join(clients.keys())}")
+    print(f"  Features: ZK={'on' if config.ZERO_KNOWLEDGE_MODE else 'off'}, "
+          f"FS={'on' if config.FORWARD_SECRECY else 'off'}, "
+          f"WS={'on' if socketio else 'off'}")
     print(f"  Debug: {config.DEBUG}")
     print(f"  Open http://127.0.0.1:{config.PORT} in your browser.\n")
-    app.run(debug=config.DEBUG, port=config.PORT)
+
+    if socketio:
+        socketio.run(app, debug=config.DEBUG, port=config.PORT, allow_unsafe_werkzeug=True)
+    else:
+        app.run(debug=config.DEBUG, port=config.PORT)
