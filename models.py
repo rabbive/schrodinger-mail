@@ -102,6 +102,9 @@ class Contact(Base):
     dilithium_fingerprint = Column(String(200), default="")
     verified = Column(Boolean, default=False)
     notes = Column(Text, default="")
+    # Optional P2P fields for direct LAN delivery
+    peer_address = Column(String(255), default="")  # e.g. "192.168.1.10:6001"
+    device_label = Column(String(100), default="")
 
     owner_user = relationship("User", back_populates="contacts")
 

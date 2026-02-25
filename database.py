@@ -487,16 +487,29 @@ def delete_draft(draft_id: int, owner: str) -> None:
 # ── Contacts ─────────────────────────────────────────────────────────────────
 
 def save_contact(
-    owner: str, name: str, username: str = "", notes: str = "",
-    kyber_fp: str = "", dilithium_fp: str = "", verified: bool = False,
+    owner: str,
+    name: str,
+    username: str = "",
+    notes: str = "",
+    kyber_fp: str = "",
+    dilithium_fp: str = "",
+    verified: bool = False,
+    peer_address: str = "",
+    device_label: str = "",
 ) -> int:
     with _lock:
         s = _get_session()
         try:
             c = Contact(
-                owner=owner, name=name, username=username,
-                kyber_fingerprint=kyber_fp, dilithium_fingerprint=dilithium_fp,
-                verified=verified, notes=notes,
+                owner=owner,
+                name=name,
+                username=username,
+                kyber_fingerprint=kyber_fp,
+                dilithium_fingerprint=dilithium_fp,
+                verified=verified,
+                notes=notes,
+                peer_address=peer_address,
+                device_label=device_label,
             )
             s.add(c)
             s.commit()
@@ -519,7 +532,10 @@ def load_contacts(owner: str) -> List[Dict[str, Any]]:
                 "id": r.id, "name": r.name, "username": r.username,
                 "kyber_fingerprint": r.kyber_fingerprint,
                 "dilithium_fingerprint": r.dilithium_fingerprint,
-                "verified": bool(r.verified), "notes": r.notes,
+                "verified": bool(r.verified),
+                "notes": r.notes,
+                "peer_address": r.peer_address,
+                "device_label": r.device_label,
             }
             for r in rows
         ]

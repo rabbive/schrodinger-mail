@@ -197,14 +197,15 @@ schrodinger-mail/
 ├── client.py           # Client-side crypto workflows — send/receive (~500 lines)
 ├── server.py           # Simulated key directory + mail relay
 ├── crypto_utils.py     # All cryptographic primitives — Kyber, Dilithium, AES, RSA
-├── database.py         # SQLite persistence — 10 tables, thread-safe
+├── database.py         # SQLAlchemy persistence — SQLite dev, PostgreSQL prod
 ├── config.py           # Environment-based configuration
 ├── demo.py             # CLI demonstration (backward compatible)
 ├── requirements.txt    # Python dependencies
 ├── Dockerfile          # Container image
-├── docker-compose.yml  # One-command deployment
+├── docker-compose.yml  # One-command deployment (app + optional Postgres + nginx)
 ├── SECURITY.md         # Security analysis and threat model
 ├── templates/
+│   ├── home.html       # New landing page with login + demo button
 │   └── index.html      # Single-page web application (~1400 lines)
 └── tests/
     ├── test_crypto.py  # Crypto primitives tests
@@ -249,6 +250,7 @@ Environment variables (all optional):
 | `POST` | `/api/send-forged` | Demo: forged signature attack |
 | `POST` | `/api/tamper/<user>` | Demo: MitM ciphertext tampering |
 | `POST` | `/api/replay/<user>` | Demo: replay attack simulation |
+| `POST` | `/p2p/incoming` | Receive an encrypted package from a LAN peer (P2P mode) |
 
 ---
 

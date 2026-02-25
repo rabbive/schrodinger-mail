@@ -74,6 +74,7 @@ class TestState:
     def test_index_renders(self, app_client):
         resp = app_client.get("/")
         assert resp.status_code == 200
+        # Should render the new home page, not error.
 
 
 # ── Send & Receive ───────────────────────────────────────────────────────────

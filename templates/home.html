@@ -1,0 +1,376 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8">
+    <title>Schrödinger Mail — Welcome</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <style>
+      :root {
+        --bg: #0f172a;
+        --surface: #020617;
+        --surface2: #1e293b;
+        --border: #334155;
+        --accent: #6366f1;
+        --accent-soft: rgba(99,102,241,.12);
+        --text: #e5e7eb;
+        --text-dim: #94a3b8;
+        --danger: #f97373;
+      }
+      * { box-sizing: border-box; margin: 0; padding: 0; }
+      body {
+        min-height: 100vh;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        background: radial-gradient(circle at top, #1e293b 0, #020617 45%, #020617 100%);
+        color: var(--text);
+        font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      }
+      .shell {
+        width: 100%;
+        max-width: 960px;
+        margin: 16px;
+        border-radius: 18px;
+        background: linear-gradient(135deg, rgba(148,163,184,.18), transparent 40%),
+                    linear-gradient(225deg, rgba(59,130,246,.12), transparent 40%),
+                    var(--surface);
+        border: 1px solid rgba(148,163,184,.35);
+        box-shadow: 0 28px 70px rgba(15,23,42,.85);
+        overflow: hidden;
+        display: grid;
+        grid-template-columns: minmax(0, 3fr) minmax(0, 2.6fr);
+      }
+      @media (max-width: 900px) {
+        .shell {
+          grid-template-columns: minmax(0, 1fr);
+        }
+        .hero {
+          border-right: none;
+          border-bottom: 1px solid rgba(148,163,184,.3);
+        }
+      }
+      .hero {
+        padding: 24px 26px 22px;
+        border-right: 1px solid rgba(148,163,184,.3);
+        position: relative;
+        overflow: hidden;
+      }
+      .hero-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        margin-bottom: 18px;
+      }
+      .logo {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        font-weight: 700;
+        letter-spacing: .02em;
+      }
+      .logo-mark {
+        width: 30px;
+        height: 30px;
+        border-radius: 10px;
+        background: radial-gradient(circle at 30% 30%, #e5e7eb 0, #9ca3af 35%, #111827 100%);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 0.8rem;
+        color: #020617;
+        box-shadow: 0 10px 25px rgba(15,23,42,.75);
+      }
+      .pill-suite {
+        padding: 4px 10px;
+        border-radius: 999px;
+        border: 1px solid rgba(148,163,184,.6);
+        background: rgba(15,23,42,.9);
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        font-size: 10px;
+        color: var(--text-dim);
+      }
+      .pill-suite span {
+        padding: 3px 7px;
+        border-radius: 999px;
+        font-weight: 600;
+      }
+      .pill-suite span:nth-child(1) { background: rgba(45,212,191,.16); color: #5eead4; }
+      .pill-suite span:nth-child(2) { background: rgba(251,191,36,.14); color: #facc15; }
+      .pill-suite span:nth-child(3) { background: rgba(96,165,250,.16); color: #93c5fd; }
+      .hero-title {
+        font-size: 1.6rem;
+        font-weight: 700;
+        margin-bottom: 6px;
+      }
+      .hero-sub {
+        font-size: 0.9rem;
+        color: var(--text-dim);
+        line-height: 1.6;
+        margin-bottom: 18px;
+      }
+      .hero-grid {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 10px;
+        font-size: 0.74rem;
+      }
+      .chip {
+        border-radius: 10px;
+        padding: 7px 9px;
+        background: rgba(15,23,42,.9);
+        border: 1px solid rgba(148,163,184,.45);
+      }
+      .chip-label {
+        font-size: 0.68rem;
+        text-transform: uppercase;
+        letter-spacing: .08em;
+        color: var(--text-dim);
+        margin-bottom: 3px;
+      }
+      .chip-main {
+        font-weight: 600;
+      }
+      .chip-desc {
+        color: var(--text-dim);
+        margin-top: 2px;
+      }
+      .glow-orbit {
+        position: absolute;
+        inset: -40%;
+        background: radial-gradient(circle at 10% 0, rgba(56,189,248,.18), transparent 55%),
+                    radial-gradient(circle at 90% 100%, rgba(129,140,248,.22), transparent 45%);
+        opacity: .25;
+        pointer-events: none;
+      }
+
+      .panel {
+        padding: 24px 24px 22px;
+        background: radial-gradient(circle at 0 0, rgba(148,163,184,.12), transparent 60%),
+                    var(--surface2);
+      }
+      .panel-title {
+        font-size: 0.95rem;
+        font-weight: 600;
+        margin-bottom: 6px;
+      }
+      .panel-sub {
+        font-size: 0.8rem;
+        color: var(--text-dim);
+        margin-bottom: 16px;
+      }
+      .field-group {
+        margin-bottom: 10px;
+      }
+      .field-label {
+        font-size: 0.75rem;
+        font-weight: 600;
+        color: var(--text-dim);
+        margin-bottom: 4px;
+      }
+      .field-input, .field-select {
+        width: 100%;
+        padding: 7px 9px;
+        border-radius: 8px;
+        border: 1px solid var(--border);
+        background: rgba(15,23,42,.96);
+        color: var(--text);
+        font-size: 0.8rem;
+      }
+      .field-input:focus, .field-select:focus {
+        outline: none;
+        border-color: var(--accent);
+        box-shadow: 0 0 0 1px rgba(99,102,241,.6);
+      }
+      .mode-toggle {
+        display: flex;
+        gap: 6px;
+        margin-bottom: 12px;
+      }
+      .mode-pill {
+        flex: 1;
+        border-radius: 999px;
+        border: 1px solid var(--border);
+        background: rgba(15,23,42,.9);
+        padding: 5px 9px;
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        font-size: 0.74rem;
+        cursor: pointer;
+      }
+      .mode-pill input {
+        accent-color: var(--accent);
+      }
+      .mode-pill span {
+        font-weight: 600;
+      }
+      .actions {
+        display: flex;
+        gap: 8px;
+        margin-top: 10px;
+      }
+      .btn-primary {
+        flex: 1;
+        border: none;
+        padding: 8px 10px;
+        border-radius: 999px;
+        background: linear-gradient(135deg, #4f46e5, #6366f1);
+        color: white;
+        font-size: 0.8rem;
+        font-weight: 600;
+        cursor: pointer;
+        box-shadow: 0 12px 28px rgba(79,70,229,.65);
+      }
+      .btn-secondary {
+        border-radius: 999px;
+        background: rgba(15,23,42,.9);
+        border: 1px solid var(--border);
+        color: var(--text-dim);
+        font-size: 0.78rem;
+        padding: 8px 10px;
+        cursor: pointer;
+      }
+      .hint {
+        font-size: 0.75rem;
+        color: var(--text-dim);
+        margin-top: 8px;
+      }
+      .error {
+        font-size: 0.75rem;
+        color: var(--danger);
+        margin-top: 6px;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="shell">
+      <div class="hero">
+        <div class="glow-orbit"></div>
+        <div class="hero-header">
+          <div class="logo">
+            <div class="logo-mark">Q</div>
+            <div>Schrödinger Mail</div>
+          </div>
+          <div class="pill-suite">
+            <span>KEM</span>
+            <span>SIG</span>
+            <span>DEM</span>
+          </div>
+        </div>
+        <div>
+          <div class="hero-title">Quantum-secure email, on your LAN.</div>
+          <p class="hero-sub">
+            Run the client on two devices, connect them over your local network,
+            and exchange post-quantum encrypted messages — or explore the full
+            cryptographic demo with Alice and Bob.
+          </p>
+        </div>
+        <div class="hero-grid">
+          <div class="chip">
+            <div class="chip-label">Post-Quantum Suite</div>
+            <div class="chip-main">Kyber768 · Dilithium3 · AES‑256‑GCM</div>
+            <div class="chip-desc">NIST-standardized algorithms at Level 3 security.</div>
+          </div>
+          <div class="chip">
+            <div class="chip-label">Modes</div>
+            <div class="chip-main">Demo · P2P LAN</div>
+            <div class="chip-desc">Switch between classroom demos and real peers.</div>
+          </div>
+          <div class="chip">
+            <div class="chip-label">Zero-Knowledge Ready</div>
+            <div class="chip-main">Client-side key encryption</div>
+            <div class="chip-desc">Private keys can stay encrypted at rest.</div>
+          </div>
+          <div class="chip">
+            <div class="chip-label">Observability</div>
+            <div class="chip-main">Crypto process log</div>
+            <div class="chip-desc">Step-by-step visualization of every message.</div>
+          </div>
+        </div>
+      </div>
+      <div class="panel">
+        <div class="panel-title">Sign in to continue</div>
+        <div class="panel-sub">
+          Log in with a local user for real P2P messaging, or jump straight into
+          the interactive Alice/Bob demo.
+        </div>
+        <form id="login-form">
+          <div class="field-group">
+            <div class="field-label">Username</div>
+            <input class="field-input" type="text" name="username" id="username" placeholder="alice" required>
+          </div>
+          <div class="field-group">
+            <div class="field-label">Password</div>
+            <input class="field-input" type="password" name="password" id="password" placeholder="••••••">
+          </div>
+          <div class="field-group">
+            <div class="field-label">Mode</div>
+            <div class="mode-toggle">
+              <label class="mode-pill">
+                <input type="radio" name="mode" value="demo" checked>
+                <span>Demo mode</span>
+              </label>
+              <label class="mode-pill">
+                <input type="radio" name="mode" value="p2p">
+                <span>P2P LAN</span>
+              </label>
+            </div>
+          </div>
+          <div class="actions">
+            <button type="submit" class="btn-primary">Continue</button>
+            <button type="button" id="demo-btn" class="btn-secondary">Run Crypto Demo</button>
+          </div>
+          <div class="hint">
+            Tip: the demo ships with <code>alice</code> and <code>bob</code> pre-configured.
+          </div>
+          <div id="error" class="error" style="display:none;"></div>
+        </form>
+      </div>
+    </div>
+    <script>
+      const form = document.getElementById('login-form');
+      const errorEl = document.getElementById('error');
+      const demoBtn = document.getElementById('demo-btn');
+
+      async function login(username, password) {
+        try {
+          const res = await fetch('/api/auth/login', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({ username, password })
+          });
+          const data = await res.json();
+          if (!res.ok || !data.ok) {
+            throw new Error(data.error || 'Login failed');
+          }
+          // Use session cookie / JWT as configured; SPA will fetch /api/state.
+          window.location.href = '/dashboard';
+        } catch (err) {
+          errorEl.textContent = err.message || 'Login failed';
+          errorEl.style.display = 'block';
+        }
+      }
+
+      form.addEventListener('submit', (e) => {
+        e.preventDefault();
+        errorEl.style.display = 'none';
+        const username = document.getElementById('username').value.trim();
+        const password = document.getElementById('password').value;
+        if (!username) {
+          errorEl.textContent = 'Please enter a username.';
+          errorEl.style.display = 'block';
+          return;
+        }
+        login(username, password);
+      });
+
+      demoBtn.addEventListener('click', () => {
+        // Demo mode: go straight to the dashboard which will boot with Alice/Bob.
+        window.location.href = '/dashboard';
+      });
+    </script>
+  </body>
+  </html>
+

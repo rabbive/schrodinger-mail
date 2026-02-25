@@ -53,3 +53,10 @@ IMAP_PORT = int(os.environ.get("QEC_IMAP_PORT", "993"))
 LOG_LEVEL = os.environ.get("QEC_LOG_LEVEL", "INFO")
 LOG_FORMAT = os.environ.get("QEC_LOG_FORMAT", "json")  # "json" or "text"
 METRICS_ENABLED = os.environ.get("QEC_METRICS", "0") == "1"
+
+# ── P2P LAN Mode ─────────────────────────────────────────────────────────────
+
+# When enabled, each node can accept encrypted messages directly from peers
+# on the local network via a small HTTP endpoint.
+P2P_ENABLED = os.environ.get("QEC_P2P_ENABLED", "0") == "1"
+P2P_LISTEN_PORT = int(os.environ.get("QEC_P2P_PORT", "6001"))

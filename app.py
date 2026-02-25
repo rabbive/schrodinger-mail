@@ -88,6 +88,13 @@ def _bootstrap() -> None:
             clients[u["username"]] = c
             inboxes[u["username"]] = db.load_emails(u["username"])
     else:
+        # No users in the database yet. In demo mode, create Alice and Bob
+        # so the cryptographic walkthrough works out-of-the-box. When P2P
+        # LAN mode is enabled, we instead wait for explicit registration
+        # so that each node represents a single real user.
+        if config.P2P_ENABLED:
+            logger.info("P2P mode enabled and no users found; waiting for registration.")
+            return
         for name in ("alice", "bob"):
             c = Client(name, mail_server)
             clients[name] = c
@@ -180,6 +187,7 @@ def _current_user() -> Optional[str]:
 
 def _require_auth(f):
     """Decorator: require login via JWT or session."""
+
     @wraps(f)
     def wrapper(*args, **kwargs):
         has_any_password = any(db.get_password_hash(u) for u in clients)
@@ -188,6 +196,7 @@ def _require_auth(f):
             if not user:
                 return jsonify({"error": "Authentication required.", "login_required": True}), 401
         return f(*args, **kwargs)
+
     return wrapper
 
 
@@ -195,6 +204,66 @@ def _notify_ws(username: str, event: str, data: Any = None) -> None:
     """Send a WebSocket notification to a user's room."""
     if socketio:
         socketio.emit(event, data or {}, room=username)
+
+
+def _get_p2p_contact_address(owner: str, recipient: str) -> Optional[str]:
+    """
+    Look up the P2P peer address for *recipient* from *owner*'s contacts.
+
+    Returns a string like ``\"192.168.1.10:6001\"`` or ``None`` if not found.
+    """
+    if not config.P2P_ENABLED:
+        return None
+    try:
+        contacts = db.load_contacts(owner)
+    except Exception:
+        return None
+    for c in contacts:
+        if c.get("username") == recipient and c.get("peer_address"):
+            return str(c["peer_address"])
+    return None
+
+
+def _send_p2p_package(
+    peer_address: str,
+    recipient: str,
+    sender: str,
+    package: Dict[str, Any],
+) -> Optional[str]:
+    """
+    Send an encrypted package directly to a peer node over HTTP.
+
+    Returns ``None`` on success or an error string on failure.
+    """
+    import json
+    import urllib.error
+    import urllib.request
+
+    url = f"http://{peer_address}/p2p/incoming"
+
+    def _b64(b: bytes) -> str:
+        return base64.b64encode(b).decode("ascii")
+
+    payload = {
+        "recipient": recipient,
+        "sender": sender,
+        "encapsulated_key": _b64(package["encapsulated_key"]),
+        "ciphertext": _b64(package["ciphertext"]),
+        "nonce": _b64(package["nonce"]),
+        "tag": _b64(package["tag"]),
+    }
+
+    data = json.dumps(payload).encode("utf-8")
+    req = urllib.request.Request(url, data=data, headers={"Content-Type": "application/json"})
+    try:
+        with urllib.request.urlopen(req, timeout=5) as resp:  # nosec B310
+            if resp.status >= 400:
+                return f"P2P peer returned HTTP {resp.status}"
+    except urllib.error.URLError as exc:
+        return f"Failed to contact P2P peer at {peer_address}: {exc}"
+    except Exception as exc:  # pragma: no cover - defensive
+        return f"Unexpected error contacting P2P peer at {peer_address}: {exc}"
+    return None
 
 
 # ── CSRF Token ───────────────────────────────────────────────────────────────
@@ -234,13 +303,16 @@ def _record_duration(response):
 
 # ── Routes: Pages ────────────────────────────────────────────────────────────
 
+
 @app.route("/")
-def index():
-    return render_template("index.html")
+def home():
+    """Landing page with login + mode selection + demo button."""
+    return render_template("home.html")
 
 
-@app.route("/login")
-def login_page():
+@app.route("/dashboard")
+def dashboard():
+    """Main single-page application (existing dashboard)."""
     return render_template("index.html")
 
 
@@ -367,6 +439,8 @@ def api_state():
             "encrypted_attachments": True,
             "email_threading": True,
         },
+        "mode": "p2p" if config.P2P_ENABLED else "demo",
+        "local_username": _current_user() or session.get("username", ""),
     })
 
 
@@ -502,11 +576,25 @@ def api_send():
         result = client.send_email_with_log(recipient_name, subject, body, encrypt_subject)
 
     pkg = result["package"]
-    db.save_pending(
-        recipient=recipient_name, sender=sender_name,
-        encapsulated_key=pkg["encapsulated_key"], ciphertext=pkg["ciphertext"],
-        nonce=pkg["nonce"], tag=pkg["tag"],
-    )
+
+    # If P2P LAN mode is enabled and we have a peer address configured for
+    # this recipient, send the package directly to the peer node instead of
+    # using the in-memory demo server.
+    peer_address = _get_p2p_contact_address(sender_name, recipient_name)
+    if config.P2P_ENABLED and peer_address:
+        error = _send_p2p_package(peer_address, recipient_name, sender_name, pkg)
+        if error:
+            return jsonify({"error": error}), 502
+    else:
+        # Demo / central mode: store pending package locally.
+        db.save_pending(
+            recipient=recipient_name,
+            sender=sender_name,
+            encapsulated_key=pkg["encapsulated_key"],
+            ciphertext=pkg["ciphertext"],
+            nonce=pkg["nonce"],
+            tag=pkg["tag"],
+        )
 
     sent_subject = subject if not encrypt_subject else result.get("subject", subject)
     level_label = {1: "Password", 2: "PQC", 3: "Hybrid RSA+Kyber"}.get(security_level, "PQC")
@@ -555,10 +643,14 @@ def api_send_forged():
     )
 
     pkg = result["package"]
+    # Forgery demo is always a local / demo operation; do not use P2P path.
     db.save_pending(
-        recipient=recipient_name, sender=sender_name,
-        encapsulated_key=pkg["encapsulated_key"], ciphertext=pkg["ciphertext"],
-        nonce=pkg["nonce"], tag=pkg["tag"],
+        recipient=recipient_name,
+        sender=sender_name,
+        encapsulated_key=pkg["encapsulated_key"],
+        ciphertext=pkg["ciphertext"],
+        nonce=pkg["nonce"],
+        tag=pkg["tag"],
     )
     db.log_audit(sender_name, "send_forged", f"Forged sig demo to {recipient_name}", _get_ip())
 
@@ -689,6 +781,69 @@ def api_replay(username: str):
     return jsonify({"ok": True, "message": f"Replayed the first pending message for {username}."})
 
 
+# ── Routes: P2P LAN Mode ─────────────────────────────────────────────────────
+
+
+@app.route("/p2p/incoming", methods=["POST"])
+def p2p_incoming():
+    """
+    Receive an encrypted package from a peer node on the LAN.
+
+    The payload is expected to be JSON with base64-encoded fields:
+        recipient, sender, encapsulated_key, ciphertext, nonce, tag
+    """
+    if not config.P2P_ENABLED:
+        return jsonify({"error": "P2P mode is disabled on this node."}), 404
+
+    data = request.get_json(force=True)
+    recipient = data.get("recipient", "").strip().lower()
+    sender = data.get("sender", "").strip().lower()
+    enc_b64 = data.get("encapsulated_key")
+    ct_b64 = data.get("ciphertext")
+    nonce_b64 = data.get("nonce")
+    tag_b64 = data.get("tag")
+
+    if not recipient or not sender:
+        return jsonify({"error": "recipient and sender are required."}), 400
+    if recipient not in clients:
+        return jsonify({"error": f"Unknown local recipient '{recipient}'"}), 404
+    if not all([enc_b64, ct_b64, nonce_b64, tag_b64]):
+        return jsonify({"error": "Missing encrypted package fields."}), 400
+
+    try:
+        encapsulated_key = base64.b64decode(enc_b64)
+        ciphertext = base64.b64decode(ct_b64)
+        nonce = base64.b64decode(nonce_b64)
+        tag = base64.b64decode(tag_b64)
+    except Exception as exc:
+        return jsonify({"error": f"Invalid base64 in package: {exc}"}), 400
+
+    package = {
+        "encapsulated_key": encapsulated_key,
+        "ciphertext": ciphertext,
+        "nonce": nonce,
+        "tag": tag,
+    }
+
+    try:
+        mail_server.send_message(sender=sender, recipient=recipient, package=package)
+    except KeyError as exc:
+        return jsonify({"error": str(exc)}), 400
+
+    # Persist a pending record so tests and tooling can inspect queued messages.
+    db.save_pending(
+        recipient=recipient,
+        sender=sender,
+        encapsulated_key=encapsulated_key,
+        ciphertext=ciphertext,
+        nonce=nonce,
+        tag=tag,
+    )
+    db.log_audit(recipient, "p2p_incoming", f"P2P message from {sender}", _get_ip())
+
+    return jsonify({"ok": True})
+
+
 # ── Routes: Reply / Forward ─────────────────────────────────────────────────
 
 @app.route("/api/reply", methods=["POST"])
@@ -776,8 +931,16 @@ def api_add_contact(username: str):
         kyber_fp = crypto_utils.key_fingerprint_short(clients[target].kyber_pk)
         dilithium_fp = crypto_utils.key_fingerprint_short(clients[target].dilithium_pk)
 
-    cid = db.save_contact(owner=username, name=name, username=target,
-                          kyber_fp=kyber_fp, dilithium_fp=dilithium_fp, notes=data.get("notes", ""))
+    cid = db.save_contact(
+        owner=username,
+        name=name,
+        username=target,
+        kyber_fp=kyber_fp,
+        dilithium_fp=dilithium_fp,
+        notes=data.get("notes", ""),
+        peer_address=data.get("peer_address", "").strip(),
+        device_label=data.get("device_label", "").strip(),
+    )
     return jsonify({"ok": True, "contact_id": cid})
 
 

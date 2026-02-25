@@ -335,6 +335,7 @@ header .user-tabs button.active{background:var(--accent);color:#fff;border-color
       <span class="chip" id="chip-kem">KEM: ...</span>
       <span class="chip" id="chip-sig">SIG: ...</span>
       <span class="chip" id="chip-dem">DEM: AES-256-GCM</span>
+      <span class="chip" id="chip-mode">Mode: Demo</span>
     </div>
     <div class="spacer"></div>
     <div class="header-actions">
@@ -419,6 +420,7 @@ header .user-tabs button.active{background:var(--accent);color:#fff;border-color
       <div style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap">
         <input type="text" id="contact-name" placeholder="Display Name" style="padding:7px 10px;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);color:var(--text);font-size:13px">
         <input type="text" id="contact-username" placeholder="Username" style="padding:7px 10px;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);color:var(--text);font-size:13px">
+        <input type="text" id="contact-peer" placeholder="Peer address (e.g. 192.168.1.10:6001)" style="flex:1;min-width:180px;padding:7px 10px;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);color:var(--text);font-size:13px">
         <button class="btn btn-primary btn-sm" onclick="addContact()">Add Contact</button>
       </div>
       <div id="contacts-list"></div>
@@ -558,6 +560,8 @@ header .user-tabs button.active{background:var(--accent);color:#fff;border-color
    ================================================================ */
 let activeUser = 'alice';
 let state = {};
+let appMode = 'demo';
+let localUsername = '';
 let inboxData = {};
 let selectedEmail = null;
 let activeFolder = 'inbox';
@@ -575,8 +579,13 @@ async function init() {
 
   const res = await fetch('/api/state');
   state = await res.json();
+  appMode = state.mode || 'demo';
+  localUsername = state.local_username || '';
   document.getElementById('chip-kem').textContent = 'KEM: ' + state.kem_algorithm;
   document.getElementById('chip-sig').textContent = 'SIG: ' + state.sig_algorithm;
+  const modeLabel = appMode === 'p2p' ? 'P2P LAN' : 'Demo';
+  const modeChip = document.getElementById('chip-mode');
+  if (modeChip) modeChip.textContent = 'Mode: ' + modeLabel;
 
   buildUserTabs();
   for (const name of Object.keys(state.users)) await loadInbox(name);
@@ -1052,11 +1061,17 @@ async function loadContacts() {
   const el = document.getElementById('contacts-list');
   const contacts = data.contacts || [];
   if (!contacts.length) { el.innerHTML = '<div class="inbox-empty">No contacts yet.</div>'; return; }
-  let html = '<table class="data-table"><thead><tr><th>Name</th><th>Username</th><th>Fingerprint</th><th>Verified</th><th></th></tr></thead><tbody>';
+  let html = '<table class="data-table"><thead><tr><th>Name</th><th>Username</th><th>Peer</th><th>Fingerprint</th><th>Verified</th><th></th></tr></thead><tbody>';
   for (const c of contacts) {
-    html += `<tr><td>${esc(c.name)}</td><td>${esc(c.username)}</td><td class="mono">${esc(c.kyber_fingerprint||'—')}</td>
-      <td>${c.verified?'<span style="color:var(--green)">✓ Verified</span>':'<button class="btn btn-sm btn-secondary" onclick="verifyContact(${c.id})">Verify</button>'}</td>
-      <td><button class="btn btn-danger btn-sm" onclick="deleteContact(${c.id})">×</button></td></tr>`;
+    const peer = c.peer_address || '';
+    html += `<tr>
+      <td>${esc(c.name)}</td>
+      <td>${esc(c.username)}</td>
+      <td class="mono" style="font-size:11px;color:var(--text-dim)">${peer ? esc(peer) : '—'}</td>
+      <td class="mono">${esc(c.kyber_fingerprint||'—')}</td>
+      <td>${c.verified?'<span style="color:var(--green)">✓ Verified</span>':'<button class="btn btn-sm btn-secondary" onclick="verifyContact('+c.id+')">Verify</button>'}</td>
+      <td><button class="btn btn-danger btn-sm" onclick="deleteContact(${c.id})">×</button></td>
+    </tr>`;
   }
   html += '</tbody></table>';
   el.innerHTML = html;
@@ -1064,10 +1079,16 @@ async function loadContacts() {
 async function addContact() {
   const name = document.getElementById('contact-name').value.trim();
   const username = document.getElementById('contact-username').value.trim().toLowerCase();
+  const peer = document.getElementById('contact-peer').value.trim();
   if (!name) { notify('Name required.','error'); return; }
-  await fetch(`/api/contacts/${activeUser}`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name,username})});
+  await fetch(`/api/contacts/${activeUser}`,{
+    method:'POST',
+    headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({name,username,peer_address:peer})
+  });
   document.getElementById('contact-name').value = '';
   document.getElementById('contact-username').value = '';
+  document.getElementById('contact-peer').value = '';
   loadContacts(); notify('Contact added.','success');
 }
 async function deleteContact(id) {
