@@ -1,5 +1,5 @@
-import { useState } from "react";
 import clsx from "clsx";
+import { useStore } from "@/hooks/useStore";
 import ComposeForm from "./ComposeForm";
 import EmailReader from "./EmailReader";
 import KeysPanel from "./KeysPanel";
@@ -7,11 +7,12 @@ import BenchmarksPanel from "./BenchmarksPanel";
 import AuditPanel from "./AuditPanel";
 import SettingsPanel from "./SettingsPanel";
 import ArchitecturePanel from "./ArchitecturePanel";
+import P2PPanel from "./P2PPanel";
 
 type Tab =
   | "compose"
   | "read"
-  | "contacts"
+  | "network"
   | "keys"
   | "benchmarks"
   | "audit"
@@ -21,7 +22,7 @@ type Tab =
 const TABS: { id: Tab; label: string }[] = [
   { id: "compose", label: "Compose" },
   { id: "read", label: "Read" },
-  { id: "contacts", label: "Contacts" },
+  { id: "network", label: "Network" },
   { id: "keys", label: "Keys" },
   { id: "benchmarks", label: "Benchmarks" },
   { id: "audit", label: "Audit Log" },
@@ -33,8 +34,11 @@ interface Props {
   showNotification: (message: string, type: "success" | "error" | "info") => void;
 }
 
+const VALID_TABS = new Set(TABS.map((t) => t.id));
+
 export default function MainPanel({ showNotification }: Props) {
-  const [activeTab, setActiveTab] = useState<Tab>("compose");
+  const { activeTab: rawTab, setActiveTab } = useStore();
+  const activeTab: Tab = VALID_TABS.has(rawTab as Tab) ? (rawTab as Tab) : "compose";
 
   return (
     <main className="overflow-hidden flex flex-col bg-[var(--bg)]">
@@ -60,16 +64,12 @@ export default function MainPanel({ showNotification }: Props) {
       <div className="flex-1 overflow-y-auto p-4 scrollbar-thin">
         {activeTab === "compose" && <ComposeForm showNotification={showNotification} />}
         {activeTab === "read" && <EmailReader />}
+        {activeTab === "network" && <P2PPanel />}
         {activeTab === "keys" && <KeysPanel />}
         {activeTab === "benchmarks" && <BenchmarksPanel />}
         {activeTab === "audit" && <AuditPanel />}
         {activeTab === "settings" && <SettingsPanel />}
         {activeTab === "architecture" && <ArchitecturePanel />}
-        {activeTab === "contacts" && (
-          <div className="text-sm text-[var(--text-dim)]">
-            Contact management — use the API at <code>/api/contacts/username</code>.
-          </div>
-        )}
       </div>
     </main>
   );

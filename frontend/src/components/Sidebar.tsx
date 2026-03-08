@@ -14,10 +14,13 @@ export default function Sidebar() {
   const {
     activeUser,
     activeFolder,
+    selectedEmailId,
     folders,
     emails,
     appState,
     setActiveFolder,
+    setSelectedEmailId,
+    setActiveTab,
     loadFolders,
     receiveEmails,
   } = useStore();
@@ -98,7 +101,15 @@ export default function Sidebar() {
           </div>
         ) : (
           [...emails].reverse().map((em) => (
-            <EmailCard key={em.id} email={em} />
+            <EmailCard
+              key={em.id}
+              email={em}
+              selected={selectedEmailId === em.id}
+              onSelect={() => {
+                setSelectedEmailId(em.id);
+                setActiveTab("read");
+              }}
+            />
           ))
         )}
       </div>
@@ -106,13 +117,23 @@ export default function Sidebar() {
   );
 }
 
-function EmailCard({ email }: { email: { id: number; sender: string; subject: string; read: boolean; verified: boolean; error?: string | null } }) {
+function EmailCard({
+  email,
+  selected,
+  onSelect,
+}: {
+  email: { id: number; sender: string; subject: string; read: boolean; verified: boolean; error?: string | null };
+  selected: boolean;
+  onSelect: () => void;
+}) {
   const isUnread = !email.read;
   return (
     <div
+      onClick={onSelect}
       className={clsx(
         "px-3 py-2 border-b border-[var(--border)] cursor-pointer hover:bg-[var(--surface2)] transition-colors",
         isUnread && "border-l-2 border-l-accent bg-accent/5",
+        selected && "bg-accent/10 border-l-2 border-l-accent",
       )}
     >
       <div className="flex items-center gap-1.5 text-xs">

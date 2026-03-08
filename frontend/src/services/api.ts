@@ -145,7 +145,7 @@ export const api = {
   // Contacts
   getContacts: (username: string) =>
     get<{ contacts: Contact[] }>(`/api/contacts/${username}`),
-  addContact: (username: string, data: Partial<Contact>) =>
+  addContact: (username: string, data: Partial<Contact> & { peer_address?: string }) =>
     post<{ ok: boolean; contact_id: number }>(`/api/contacts/${username}`, data),
   deleteContact: (username: string, contactId: number) =>
     del<{ ok: boolean }>(`/api/contacts/${username}/${contactId}`),

@@ -9,6 +9,8 @@ interface Store {
   activeFolder: string;
   emails: Email[];
   folders: Folder[];
+  selectedEmailId: number | null;
+  activeTab: string;
   cryptoLog: CryptoStep[];
   loading: boolean;
   theme: "dark" | "light";
@@ -19,6 +21,8 @@ interface Store {
   init: () => Promise<void>;
   setActiveUser: (user: string) => void;
   setActiveFolder: (folder: string) => void;
+  setSelectedEmailId: (id: number | null) => void;
+  setActiveTab: (tab: string) => void;
   loadFolders: () => Promise<void>;
   loadEmails: (folder?: string) => Promise<void>;
   sendEmail: (data: {
@@ -47,6 +51,8 @@ export const useStore = create<Store>((set, get) => ({
   activeFolder: "inbox",
   emails: [],
   folders: [],
+  selectedEmailId: null,
+  activeTab: "compose",
   cryptoLog: [],
   loading: false,
   theme: (localStorage.getItem("qec-theme") as "dark" | "light") || "dark",
@@ -63,10 +69,12 @@ export const useStore = create<Store>((set, get) => ({
     await get().loadEmails();
   },
 
+  setSelectedEmailId: (id) => set({ selectedEmailId: id }),
+  setActiveTab: (tab) => set({ activeTab: tab }),
+
   setActiveUser: (user) => {
-    set({ activeUser: user, activeFolder: "inbox", emails: [] });
-    get().loadFolders();
-    get().loadEmails();
+    set({ activeUser: user, activeFolder: "inbox", emails: [], selectedEmailId: null });
+    get().receiveEmails();
   },
 
   setActiveFolder: async (folder) => {

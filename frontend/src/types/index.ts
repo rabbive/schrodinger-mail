@@ -20,6 +20,7 @@ export interface AppState {
   kem_algorithm: string;
   sig_algorithm: string;
   dem_algorithm: string;
+  mode: "demo" | "p2p";
   users: Record<string, UserInfo>;
   features: {
     zero_knowledge: boolean;
@@ -68,6 +69,7 @@ export interface Contact {
   dilithium_fingerprint: string;
   verified: boolean;
   notes: string;
+  peer_address?: string;
 }
 
 export interface CryptoStep {

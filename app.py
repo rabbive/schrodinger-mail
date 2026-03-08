@@ -305,14 +305,9 @@ def _record_duration(response):
 
 
 @app.route("/")
-def home():
-    """Landing page with login + mode selection + demo button."""
-    return render_template("home.html")
-
-
 @app.route("/dashboard")
-def dashboard():
-    """Main single-page application (existing dashboard)."""
+def home():
+    """Main single-page application."""
     return render_template("index.html")
 
 

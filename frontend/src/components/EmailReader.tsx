@@ -1,12 +1,9 @@
-import { useState } from "react";
 import { useStore } from "@/hooks/useStore";
-import clsx from "clsx";
 
 export default function EmailReader() {
-  const { emails } = useStore();
-  const [selectedId, setSelectedId] = useState<number | null>(null);
+  const { emails, selectedEmailId } = useStore();
 
-  const selected = emails.find((e) => e.id === selectedId);
+  const selected = emails.find((e) => e.id === selectedEmailId);
 
   if (!selected) {
     return (

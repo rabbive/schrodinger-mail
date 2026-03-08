@@ -11,14 +11,14 @@ export default {
           secondary: "var(--surface2)",
         },
         accent: {
-          DEFAULT: "#6c5ce7",
-          light: "#a29bfe",
+          DEFAULT: "#0891b2",
+          light: "#67e8f9",
         },
         quantum: {
-          green: "#00b894",
-          red: "#e17055",
-          orange: "#fdcb6e",
-          blue: "#74b9ff",
+          green: "#3fb950",
+          red: "#f85149",
+          orange: "#d29922",
+          blue: "#58a6ff",
         },
       },
       fontFamily: {

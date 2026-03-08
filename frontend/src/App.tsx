@@ -1,4 +1,5 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import { io, Socket } from "socket.io-client";
 import { useStore } from "@/hooks/useStore";
 import Header from "@/components/Header";
 import Sidebar from "@/components/Sidebar";
@@ -7,12 +8,14 @@ import CryptoPanel from "@/components/CryptoPanel";
 import Notification from "@/components/Notification";
 
 export default function App() {
-  const { init, theme, appState } = useStore();
+  const { init, theme, appState, activeUser, receiveEmails } = useStore();
   const [notification, setNotification] = useState<{
     message: string;
     type: "success" | "error" | "info";
   } | null>(null);
   const [ready, setReady] = useState(false);
+  const socketRef = useRef<Socket | null>(null);
+  const pollIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   useEffect(() => {
     document.documentElement.className = theme;
@@ -26,6 +29,53 @@ export default function App() {
         setReady(true);
       });
   }, [init]);
+
+  // Auto-receive: Socket.IO with polling fallback
+  useEffect(() => {
+    if (!ready) return;
+
+    const wsEnabled = appState?.features?.websockets ?? false;
+
+    // Clear previous interval if any
+    if (pollIntervalRef.current) {
+      clearInterval(pollIntervalRef.current);
+      pollIntervalRef.current = null;
+    }
+
+    if (wsEnabled) {
+      // Disconnect previous socket before creating a new one
+      if (socketRef.current) {
+        socketRef.current.disconnect();
+      }
+      const socket = io({ transports: ["websocket", "polling"] });
+      socketRef.current = socket;
+
+      socket.on("connect", () => {
+        socket.emit("join", { username: activeUser });
+      });
+
+      socket.on("new_mail", () => {
+        receiveEmails();
+      });
+    } else {
+      // Polling fallback: check every 30 seconds
+      pollIntervalRef.current = setInterval(() => {
+        receiveEmails();
+      }, 30_000);
+    }
+
+    return () => {
+      if (pollIntervalRef.current) {
+        clearInterval(pollIntervalRef.current);
+        pollIntervalRef.current = null;
+      }
+      if (socketRef.current) {
+        socketRef.current.disconnect();
+        socketRef.current = null;
+      }
+    };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ready, activeUser, appState?.features?.websockets]);
 
   if (!ready || !appState) {
     return (

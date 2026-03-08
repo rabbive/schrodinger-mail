@@ -10,7 +10,7 @@ export default function ComposeForm({ showNotification }: Props) {
   const [recipient, setRecipient] = useState("");
   const [subject, setSubject] = useState("");
   const [body, setBody] = useState("");
-  const [securityLevel, setSecurityLevel] = useState(2);
+  const [securityLevel, setSecurityLevel] = useState(1);
   const [encryptSubject, setEncryptSubject] = useState(false);
   const [password, setPassword] = useState("");
   const [sending, setSending] = useState(false);
@@ -92,9 +92,9 @@ export default function ComposeForm({ showNotification }: Props) {
           onChange={(e) => setSecurityLevel(Number(e.target.value))}
           className="w-full px-3 py-2 bg-[var(--surface)] border border-[var(--border)] rounded text-sm text-[var(--text)] focus:outline-none focus:border-accent"
         >
+          <option value={1}>Level 1 — Password-Protected (scrypt KDF)</option>
           <option value={2}>Level 2 — Post-Quantum (Kyber768 + Dilithium3)</option>
           <option value={3}>Level 3 — Hybrid Defense-in-Depth (RSA-2048 + Kyber768)</option>
-          <option value={1}>Level 1 — Password-Protected (scrypt KDF)</option>
         </select>
       </div>
 
