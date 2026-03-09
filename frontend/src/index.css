@@ -4,57 +4,111 @@
 @tailwind components;
 @tailwind utilities;
 
-:root {
-  --bg: #0a0c10;
-  --surface: #12151a;
-  --surface2: #1a1e25;
-  --surface3: #22272e;
-  --border: #262b33;
-  --border-light: #2d333b;
-  --text: #cdd6e0;
-  --text-dim: #636e7b;
-  --text-muted: #444c56;
-  --accent: #4493f8;
-  --accent2: #79c0ff;
-  --green: #3fb950;
-  --red: #f85149;
-  --orange: #d29922;
-  --blue: #58a6ff;
-  --radius: 6px;
-}
-
-.light {
-  --bg: #f6f8fa;
-  --surface: #ffffff;
-  --surface2: #f0f2f5;
-  --surface3: #e8ebef;
-  --border: #d1d9e0;
-  --border-light: #dde2e8;
-  --text: #1f2328;
-  --text-dim: #636e7b;
-  --text-muted: #8b949e;
-}
-
-* {
-  margin: 0;
-  padding: 0;
-  box-sizing: border-box;
-}
-
-body {
-  background: var(--bg);
-  color: var(--text);
-  font-family: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-  font-size: 13px;
-  line-height: 1.5;
-  -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
-}
-
 @layer base {
+  :root {
+    --background: 220 25% 4%;
+    --foreground: 213 20% 83%;
+
+    --card: 220 20% 8%;
+    --card-foreground: 213 20% 83%;
+
+    --popover: 220 20% 8%;
+    --popover-foreground: 213 20% 83%;
+
+    --primary: 212 94% 62%;
+    --primary-foreground: 0 0% 100%;
+
+    --secondary: 220 16% 12%;
+    --secondary-foreground: 213 20% 83%;
+
+    --muted: 220 14% 17%;
+    --muted-foreground: 215 10% 35%;
+
+    --accent: 212 94% 62%;
+    --accent-foreground: 0 0% 100%;
+
+    --destructive: 2 88% 63%;
+    --destructive-foreground: 0 0% 100%;
+
+    --border: 218 14% 17%;
+    --input: 218 14% 17%;
+    --ring: 212 94% 62%;
+
+    --radius: 0.375rem;
+
+    --surface: 220 20% 8%;
+    --surface2: 220 16% 12%;
+    --surface3: 218 14% 16%;
+    --border-light: 216 12% 21%;
+    --text: 213 20% 83%;
+    --text-dim: 212 10% 44%;
+    --text-muted: 212 8% 30%;
+
+    --quantum-green: 136 60% 48%;
+    --quantum-red: 2 88% 63%;
+    --quantum-orange: 38 75% 49%;
+    --quantum-blue: 211 100% 67%;
+  }
+
+  .light {
+    --background: 210 20% 97%;
+    --foreground: 220 18% 14%;
+
+    --card: 0 0% 100%;
+    --card-foreground: 220 18% 14%;
+
+    --popover: 0 0% 100%;
+    --popover-foreground: 220 18% 14%;
+
+    --primary: 212 94% 62%;
+    --primary-foreground: 0 0% 100%;
+
+    --secondary: 216 16% 94%;
+    --secondary-foreground: 220 18% 14%;
+
+    --muted: 215 16% 91%;
+    --muted-foreground: 212 10% 55%;
+
+    --accent: 212 94% 62%;
+    --accent-foreground: 0 0% 100%;
+
+    --destructive: 2 88% 63%;
+    --destructive-foreground: 0 0% 100%;
+
+    --border: 213 16% 82%;
+    --input: 213 16% 82%;
+    --ring: 212 94% 62%;
+
+    --surface: 0 0% 100%;
+    --surface2: 216 16% 94%;
+    --surface3: 213 16% 91%;
+    --border-light: 214 14% 87%;
+    --text: 220 18% 14%;
+    --text-dim: 212 10% 44%;
+    --text-muted: 212 8% 58%;
+
+    --quantum-green: 136 60% 48%;
+    --quantum-red: 2 88% 63%;
+    --quantum-orange: 38 75% 49%;
+    --quantum-blue: 211 100% 67%;
+  }
+
+  * {
+    @apply border-border;
+  }
+
+  body {
+    @apply bg-background text-foreground;
+    font-family: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    font-size: 13px;
+    line-height: 1.5;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
   ::selection {
-    background: var(--accent);
-    color: #fff;
+    background: hsl(var(--primary));
+    color: hsl(var(--primary-foreground));
   }
 
   input, textarea, select {
@@ -62,16 +116,14 @@ body {
   }
 
   :focus-visible {
-    outline: 2px solid var(--accent);
-    outline-offset: 1px;
-    border-radius: var(--radius);
+    @apply outline-none ring-2 ring-ring ring-offset-2 ring-offset-background rounded-md;
   }
 }
 
 @layer utilities {
   .scrollbar-thin {
     scrollbar-width: thin;
-    scrollbar-color: var(--border) transparent;
+    scrollbar-color: hsl(var(--border)) transparent;
   }
   .font-mono {
     font-family: "JetBrains Mono", "SF Mono", "Cascadia Code", "Fira Code", "Consolas", monospace;

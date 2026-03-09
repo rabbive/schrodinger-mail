@@ -1,11 +1,13 @@
 import { useEffect, useRef, useState } from "react";
 import { io, Socket } from "socket.io-client";
 import { useStore } from "@/hooks/useStore";
+import { TooltipProvider } from "@/components/ui/tooltip";
 import Header from "@/components/Header";
 import Sidebar from "@/components/Sidebar";
 import MainPanel from "@/components/MainPanel";
 import CryptoPanel from "@/components/CryptoPanel";
 import Notification from "@/components/Notification";
+import { Loader2 } from "lucide-react";
 
 export default function App() {
   const { init, theme, appState, activeUser, receiveEmails } = useStore();
@@ -75,28 +77,30 @@ export default function App() {
 
   if (!ready || !appState) {
     return (
-      <div className="flex items-center justify-center h-screen bg-[var(--bg)]">
+      <div className="flex items-center justify-center h-screen bg-background">
         <div className="flex flex-col items-center gap-3">
-          <div className="w-6 h-6 border-2 border-accent border-t-transparent rounded-full animate-spin" />
-          <span className="text-[11px] text-[var(--text-muted)] font-mono">Initializing...</span>
+          <Loader2 className="w-6 h-6 text-primary animate-spin" />
+          <span className="text-[11px] text-muted-foreground font-mono">Initializing...</span>
         </div>
       </div>
     );
   }
 
   return (
-    <div className="h-screen grid grid-rows-[48px_1fr] grid-cols-[220px_1fr_300px] max-xl:grid-cols-[200px_1fr_280px] max-lg:grid-cols-1">
-      <Header />
-      <Sidebar />
-      <MainPanel showNotification={(msg, type) => setNotification({ message: msg, type })} />
-      <CryptoPanel />
-      {notification && (
-        <Notification
-          message={notification.message}
-          type={notification.type}
-          onDismiss={() => setNotification(null)}
-        />
-      )}
-    </div>
+    <TooltipProvider>
+      <div className="h-screen grid grid-rows-[48px_1fr] grid-cols-[220px_1fr_300px] max-xl:grid-cols-[200px_1fr_280px] max-lg:grid-cols-1">
+        <Header />
+        <Sidebar />
+        <MainPanel showNotification={(msg, type) => setNotification({ message: msg, type })} />
+        <CryptoPanel />
+        {notification && (
+          <Notification
+            message={notification.message}
+            type={notification.type}
+            onDismiss={() => setNotification(null)}
+          />
+        )}
+      </div>
+    </TooltipProvider>
   );
 }

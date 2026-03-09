@@ -1,7 +1,22 @@
 import { useEffect, useState } from "react";
 import { useStore } from "@/hooks/useStore";
 import { api } from "@/services/api";
-import clsx from "clsx";
+import { cn } from "@/lib/utils";
+import { Card, CardContent } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
+import {
+  ShieldCheck,
+  ShieldAlert,
+  ShieldX,
+  AlertTriangle,
+  RotateCcw,
+  Check,
+  X,
+  Loader2,
+  Fingerprint,
+  KeyRound,
+} from "lucide-react";
 
 interface FingerprintState {
   username: string;
@@ -113,108 +128,104 @@ export default function TofuPanel() {
   const trustBadge = (state: string) => {
     switch (state) {
       case "trusted":
-        return { label: "Trusted (TOFU)", class: "bg-quantum-green/10 text-quantum-green border-quantum-green/20" };
+        return { label: "Trusted (TOFU)", variant: "success" as const, icon: ShieldCheck };
       case "rotated":
-        return { label: "Rotated (Accepted)", class: "bg-accent/10 text-accent border-accent/20" };
+        return { label: "Rotated (Accepted)", variant: "default" as const, icon: RotateCcw };
       case "warning":
-        return { label: "Key Changed!", class: "bg-quantum-orange/10 text-quantum-orange border-quantum-orange/20" };
+        return { label: "Key Changed!", variant: "warning" as const, icon: AlertTriangle };
       case "rejected":
-        return { label: "Rejected", class: "bg-quantum-red/10 text-quantum-red border-quantum-red/20" };
+        return { label: "Rejected", variant: "destructive" as const, icon: ShieldX };
       default:
-        return { label: "Unknown", class: "bg-[var(--surface2)] text-[var(--text-muted)] border-[var(--border)]" };
+        return { label: "Unknown", variant: "outline" as const, icon: ShieldAlert };
     }
   };
 
   return (
     <div className="max-w-3xl space-y-5">
-      <div>
-        <h2 className="text-[14px] font-semibold text-[var(--text)]">
-          Trust & Key Rotation (TOFU)
-        </h2>
-        <p className="text-[11px] text-[var(--text-muted)] mt-1">
-          Trust-On-First-Use key management. View fingerprints, simulate key rotation, and observe trust warnings.
-        </p>
+      <div className="flex items-center gap-2">
+        <ShieldCheck className="w-4 h-4 text-primary" />
+        <div>
+          <h2 className="text-[14px] font-semibold text-foreground">
+            Trust & Key Rotation (TOFU)
+          </h2>
+          <p className="text-[11px] text-muted-foreground mt-1">
+            Trust-On-First-Use key management. View fingerprints, simulate key rotation, and observe trust warnings.
+          </p>
+        </div>
       </div>
 
-      {/* MITM Warning Banner */}
       {pendingWarning && (
-        <div className="p-4 rounded border-2 border-quantum-orange bg-quantum-orange/5 animate-fade-slide">
+        <div className="p-4 rounded-md border-2 border-quantum-orange bg-quantum-orange/5 animate-fade-slide">
           <div className="flex items-center gap-2 mb-2">
-            <span className="text-lg">⚠</span>
+            <AlertTriangle className="w-5 h-5 text-quantum-orange" />
             <span className="text-[13px] font-bold text-quantum-orange">
               Key Fingerprint Changed — Possible MITM Attack
             </span>
           </div>
-          <p className="text-[12px] text-[var(--text)] mb-3 leading-relaxed">
+          <p className="text-[12px] text-foreground mb-3 leading-relaxed">
             The public key fingerprint for <span className="font-semibold capitalize">{pendingWarning.username}</span> has
             changed. This could indicate a legitimate key rotation or a man-in-the-middle attack where an attacker
             has substituted their own public key.
           </p>
 
           <div className="grid grid-cols-2 gap-3 mb-3">
-            <div className="p-2.5 rounded bg-quantum-red/8 border border-quantum-red/15">
-              <div className="text-[9px] font-semibold uppercase tracking-wider text-quantum-red mb-1">
-                Previous Kyber Fingerprint
+            <div className="p-2.5 rounded-md bg-destructive/8 border border-destructive/15">
+              <div className="text-[9px] font-semibold uppercase tracking-wider text-destructive mb-1 flex items-center gap-1">
+                <X className="w-2.5 h-2.5" /> Previous Kyber Fingerprint
               </div>
-              <div className="text-[10px] font-mono text-[var(--text-dim)] break-all leading-relaxed">
+              <div className="text-[10px] font-mono text-muted-foreground break-all leading-relaxed">
                 {pendingWarning.old.kyber}
               </div>
             </div>
-            <div className="p-2.5 rounded bg-quantum-green/8 border border-quantum-green/15">
-              <div className="text-[9px] font-semibold uppercase tracking-wider text-quantum-green mb-1">
-                New Kyber Fingerprint
+            <div className="p-2.5 rounded-md bg-quantum-green/8 border border-quantum-green/15">
+              <div className="text-[9px] font-semibold uppercase tracking-wider text-quantum-green mb-1 flex items-center gap-1">
+                <Check className="w-2.5 h-2.5" /> New Kyber Fingerprint
               </div>
-              <div className="text-[10px] font-mono text-[var(--text-dim)] break-all leading-relaxed">
+              <div className="text-[10px] font-mono text-muted-foreground break-all leading-relaxed">
                 {pendingWarning.current.kyber}
               </div>
             </div>
           </div>
 
           <div className="grid grid-cols-2 gap-3 mb-3">
-            <div className="p-2.5 rounded bg-quantum-red/8 border border-quantum-red/15">
-              <div className="text-[9px] font-semibold uppercase tracking-wider text-quantum-red mb-1">
-                Previous Dilithium Fingerprint
+            <div className="p-2.5 rounded-md bg-destructive/8 border border-destructive/15">
+              <div className="text-[9px] font-semibold uppercase tracking-wider text-destructive mb-1 flex items-center gap-1">
+                <X className="w-2.5 h-2.5" /> Previous Dilithium Fingerprint
               </div>
-              <div className="text-[10px] font-mono text-[var(--text-dim)] break-all leading-relaxed">
+              <div className="text-[10px] font-mono text-muted-foreground break-all leading-relaxed">
                 {pendingWarning.old.dilithium}
               </div>
             </div>
-            <div className="p-2.5 rounded bg-quantum-green/8 border border-quantum-green/15">
-              <div className="text-[9px] font-semibold uppercase tracking-wider text-quantum-green mb-1">
-                New Dilithium Fingerprint
+            <div className="p-2.5 rounded-md bg-quantum-green/8 border border-quantum-green/15">
+              <div className="text-[9px] font-semibold uppercase tracking-wider text-quantum-green mb-1 flex items-center gap-1">
+                <Check className="w-2.5 h-2.5" /> New Dilithium Fingerprint
               </div>
-              <div className="text-[10px] font-mono text-[var(--text-dim)] break-all leading-relaxed">
+              <div className="text-[10px] font-mono text-muted-foreground break-all leading-relaxed">
                 {pendingWarning.current.dilithium}
               </div>
             </div>
           </div>
 
           <div className="flex gap-2">
-            <button
-              onClick={acceptRotation}
-              className="px-4 py-1.5 bg-quantum-green text-white text-[12px] font-semibold rounded hover:bg-quantum-green/80 transition-colors"
-            >
-              Accept New Key
-            </button>
-            <button
-              onClick={rejectRotation}
-              className="px-4 py-1.5 bg-quantum-red text-white text-[12px] font-semibold rounded hover:bg-quantum-red/80 transition-colors"
-            >
-              Reject (Possible MITM)
-            </button>
+            <Button onClick={acceptRotation} className="bg-quantum-green text-white hover:bg-quantum-green/90" size="sm">
+              <Check className="w-3.5 h-3.5" /> Accept New Key
+            </Button>
+            <Button onClick={rejectRotation} variant="destructive" size="sm">
+              <X className="w-3.5 h-3.5" /> Reject (Possible MITM)
+            </Button>
           </div>
         </div>
       )}
 
-      {/* User fingerprints */}
       <div className="space-y-2">
-        <div className="text-[10px] font-semibold uppercase tracking-wider text-[var(--text-muted)]">
+        <div className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground flex items-center gap-1.5">
+          <Fingerprint className="w-3 h-3" />
           User Fingerprints & Trust States
         </div>
 
         {loading ? (
           <div className="flex items-center justify-center py-8">
-            <div className="w-5 h-5 border-2 border-accent border-t-transparent rounded-full animate-spin" />
+            <Loader2 className="w-5 h-5 text-primary animate-spin" />
           </div>
         ) : (
           <div className="space-y-2">
@@ -222,111 +233,105 @@ export default function TofuPanel() {
               const state = trustState(fp.username);
               const badge = trustBadge(state);
               const isRotating = rotating === fp.username;
+              const BadgeIcon = badge.icon;
 
               return (
-                <div
-                  key={fp.username}
-                  className="rounded border border-[var(--border)] bg-[var(--surface)] overflow-hidden"
-                >
+                <Card key={fp.username} className="overflow-hidden">
                   <div className="flex items-center gap-3 px-4 py-3">
-                    <div className="w-8 h-8 rounded-full bg-accent/10 flex items-center justify-center flex-shrink-0">
-                      <span className="text-[13px] font-bold text-accent capitalize">
+                    <div className="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center flex-shrink-0">
+                      <span className="text-[13px] font-bold text-primary capitalize">
                         {fp.username.charAt(0)}
                       </span>
                     </div>
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2">
-                        <span className="text-[13px] font-semibold text-[var(--text)] capitalize">
+                        <span className="text-[13px] font-semibold text-foreground capitalize">
                           {fp.username}
                         </span>
-                        <span
-                          className={clsx(
-                            "px-1.5 py-0.5 text-[9px] font-mono font-medium rounded border",
-                            badge.class,
-                          )}
-                        >
-                          {badge.label}
-                        </span>
+                        <Badge variant={badge.variant} className="gap-1">
+                          <BadgeIcon className="w-2.5 h-2.5" /> {badge.label}
+                        </Badge>
                       </div>
                     </div>
-                    <button
+                    <Button
+                      variant="outline"
+                      size="sm"
                       onClick={() => handleRotate(fp.username)}
                       disabled={!!rotating}
-                      className={clsx(
-                        "px-3 py-1.5 text-[11px] font-medium rounded border transition-all flex-shrink-0",
-                        isRotating
-                          ? "bg-quantum-orange/20 text-quantum-orange border-quantum-orange/20 cursor-wait"
-                          : "bg-[var(--surface2)] text-[var(--text-dim)] border-[var(--border)] hover:border-quantum-orange hover:text-quantum-orange disabled:opacity-40",
+                      className={cn(
+                        isRotating && "text-quantum-orange border-quantum-orange/20",
                       )}
                     >
+                      {isRotating ? (
+                        <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                      ) : (
+                        <RotateCcw className="w-3.5 h-3.5" />
+                      )}
                       {isRotating ? "Rotating..." : "Rotate Keys"}
-                    </button>
+                    </Button>
                   </div>
 
-                  <div className="px-4 pb-3 space-y-1.5">
+                  <CardContent className="px-4 pb-3 pt-0 space-y-1.5">
                     <FingerprintRow label="Kyber768 (KEM)" value={fp.kyber} />
                     <FingerprintRow label="Dilithium3 (SIG)" value={fp.dilithium} />
-                  </div>
-                </div>
+                  </CardContent>
+                </Card>
               );
             })}
           </div>
         )}
       </div>
 
-      {/* Rotation history */}
       {rotationHistory.length > 0 && (
         <div className="space-y-2">
-          <div className="text-[10px] font-semibold uppercase tracking-wider text-[var(--text-muted)]">
-            Rotation History
+          <div className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground flex items-center gap-1.5">
+            <RotateCcw className="w-3 h-3" /> Rotation History
           </div>
-          <div className="rounded border border-[var(--border)] overflow-hidden">
+          <Card className="overflow-hidden">
             {rotationHistory.map((record, i) => (
               <div
                 key={i}
-                className={clsx(
+                className={cn(
                   "flex items-center gap-3 px-3 py-2",
-                  i < rotationHistory.length - 1 && "border-b border-[var(--border)]",
-                  "bg-[var(--surface)]",
+                  i < rotationHistory.length - 1 && "border-b",
                 )}
               >
                 <span
-                  className={clsx(
+                  className={cn(
                     "w-2 h-2 rounded-full flex-shrink-0",
-                    record.accepted ? "bg-quantum-green" : "bg-quantum-red",
+                    record.accepted ? "bg-quantum-green" : "bg-destructive",
                   )}
                 />
                 <div className="flex-1 min-w-0">
-                  <span className="text-[11px] font-medium text-[var(--text)] capitalize">
+                  <span className="text-[11px] font-medium text-foreground capitalize">
                     {record.username}
                   </span>
-                  <span className="text-[10px] text-[var(--text-muted)] ml-2">
+                  <span className="text-[10px] text-muted-foreground ml-2">
                     {record.accepted ? "Key accepted" : "Key rejected (MITM warning)"}
                   </span>
                 </div>
-                <span className="text-[9px] font-mono text-[var(--text-muted)]">
+                <span className="text-[9px] font-mono text-muted-foreground">
                   {new Date(record.timestamp).toLocaleTimeString()}
                 </span>
               </div>
             ))}
-          </div>
+          </Card>
         </div>
       )}
 
-      {/* Info */}
-      <div className="p-3 rounded border border-[var(--border)] bg-[var(--surface)] text-[11px] text-[var(--text-muted)] space-y-1.5">
-        <div className="font-medium text-[var(--text-dim)] text-[12px]">
-          About Trust-On-First-Use (TOFU)
+      <Card className="p-3 text-[11px] text-muted-foreground space-y-1.5">
+        <div className="font-medium text-foreground/70 text-[12px] flex items-center gap-1.5">
+          <KeyRound className="w-3 h-3" /> About Trust-On-First-Use (TOFU)
         </div>
         <p>
           TOFU means the first time you see a user's public key, you trust it. If the fingerprint ever changes,
           a warning is raised because it could mean a man-in-the-middle has substituted their own key.
         </p>
         <p>
-          This is the same model used by SSH (<span className="font-mono text-accent">known_hosts</span>) and
+          This is the same model used by SSH (<span className="font-mono text-primary">known_hosts</span>) and
           Signal's safety numbers. In production, you'd verify fingerprints out-of-band (QR code, phone call).
         </p>
-      </div>
+      </Card>
     </div>
   );
 }
@@ -334,10 +339,10 @@ export default function TofuPanel() {
 function FingerprintRow({ label, value }: { label: string; value: string }) {
   return (
     <div className="flex items-start gap-2">
-      <span className="text-[10px] font-medium text-[var(--text-muted)] w-28 flex-shrink-0 pt-0.5">
-        {label}
+      <span className="text-[10px] font-medium text-muted-foreground w-28 flex-shrink-0 pt-0.5 flex items-center gap-1">
+        <Fingerprint className="w-2.5 h-2.5" /> {label}
       </span>
-      <span className="text-[10px] font-mono text-accent break-all leading-relaxed">
+      <span className="text-[10px] font-mono text-primary break-all leading-relaxed">
         {value || "N/A"}
       </span>
     </div>

@@ -1,65 +1,68 @@
 import { useStore } from "@/hooks/useStore";
-import clsx from "clsx";
+import { cn } from "@/lib/utils";
+import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
+import { Separator } from "@/components/ui/separator";
+import { Sun, Moon, Shield } from "lucide-react";
 
 export default function Header() {
   const { appState, activeUser, setActiveUser, toggleTheme, theme } = useStore();
   const users = appState ? Object.keys(appState.users) : [];
 
   return (
-    <header className="col-span-full flex items-center gap-3 px-4 h-[48px] border-b border-[var(--border)] bg-[var(--surface)]">
+    <header className="col-span-full flex items-center gap-3 px-4 h-[48px] border-b bg-card">
       <div className="flex items-center gap-2.5">
-        <span className="w-6 h-6 rounded bg-accent flex items-center justify-center text-white text-xs font-bold tracking-tight">
-          S
+        <span className="w-6 h-6 rounded-md bg-primary flex items-center justify-center text-primary-foreground">
+          <Shield className="w-3.5 h-3.5" />
         </span>
-        <span className="font-semibold text-sm text-[var(--text)] tracking-tight">
+        <span className="font-semibold text-sm text-foreground tracking-tight">
           Schrödinger Mail
         </span>
       </div>
 
-      <div className="h-4 w-px bg-[var(--border)] mx-1" />
+      <Separator orientation="vertical" className="h-4 mx-1" />
 
       <div className="flex items-center gap-1.5">
         {appState && (
           <>
-            <span className="px-1.5 py-0.5 bg-[var(--surface2)] text-[var(--text-dim)] text-[10px] font-mono font-medium rounded border border-[var(--border)]">
-              {appState.kem_algorithm}
-            </span>
-            <span className="px-1.5 py-0.5 bg-[var(--surface2)] text-[var(--text-dim)] text-[10px] font-mono font-medium rounded border border-[var(--border)]">
-              {appState.sig_algorithm}
-            </span>
-            <span className="px-1.5 py-0.5 bg-[var(--surface2)] text-[var(--text-dim)] text-[10px] font-mono font-medium rounded border border-[var(--border)]">
-              AES-256-GCM
-            </span>
+            <Badge variant="outline">{appState.kem_algorithm}</Badge>
+            <Badge variant="outline">{appState.sig_algorithm}</Badge>
+            <Badge variant="outline">AES-256-GCM</Badge>
           </>
         )}
       </div>
 
       <div className="flex-1" />
 
-      <button
+      <Button
+        variant="outline"
+        size="icon"
         onClick={toggleTheme}
-        className="w-7 h-7 rounded bg-[var(--surface2)] border border-[var(--border)] flex items-center justify-center text-[11px] text-[var(--text-dim)] hover:text-[var(--text)] hover:border-[var(--border-light)] transition-colors"
-        title="Toggle theme"
+        className="w-7 h-7"
       >
-        {theme === "dark" ? "☀" : "☾"}
-      </button>
+        {theme === "dark" ? (
+          <Sun className="h-3.5 w-3.5" />
+        ) : (
+          <Moon className="h-3.5 w-3.5" />
+        )}
+        <span className="sr-only">Toggle theme</span>
+      </Button>
 
-      <div className="h-4 w-px bg-[var(--border)] mx-0.5" />
+      <Separator orientation="vertical" className="h-4 mx-0.5" />
 
       <div className="flex items-center gap-1">
         {users.map((name) => (
-          <button
+          <Button
             key={name}
+            variant={name === activeUser ? "default" : "outline"}
+            size="sm"
             onClick={() => setActiveUser(name)}
-            className={clsx(
-              "px-2.5 py-1 rounded text-xs font-medium transition-all",
-              name === activeUser
-                ? "bg-accent/15 text-accent border border-accent/30"
-                : "bg-[var(--surface2)] text-[var(--text-dim)] border border-[var(--border)] hover:text-[var(--text)] hover:border-[var(--border-light)]",
+            className={cn(
+              name === activeUser && "bg-primary/15 text-primary border border-primary/30 hover:bg-primary/25",
             )}
           >
             {name.charAt(0).toUpperCase() + name.slice(1)}
-          </button>
+          </Button>
         ))}
       </div>
     </header>
