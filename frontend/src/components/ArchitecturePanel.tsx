@@ -1,56 +1,82 @@
+import { cn } from "@/lib/utils";
+import { Card, CardContent } from "@/components/ui/card";
+import {
+  Layers,
+  ArrowDownToLine,
+  FileSignature,
+  Package,
+  Lock,
+  Unlock,
+  ShieldCheck,
+  RefreshCcwDot,
+  Inbox,
+  Send,
+} from "lucide-react";
+
+const SENDER_ICONS = [ArrowDownToLine, FileSignature, Package, Lock, Lock, Send];
+const RECEIVER_ICONS = [Unlock, Unlock, Package, ShieldCheck, RefreshCcwDot, Inbox];
+
 export default function ArchitecturePanel() {
   return (
-    <div className="max-w-3xl">
-      <h2 className="text-base font-bold mb-1">Signed KEM-DEM Architecture</h2>
-      <p className="text-xs text-[var(--text-dim)] mb-4">
-        Interactive visualization of the quantum-secure email pipeline.
-      </p>
+    <div className="max-w-3xl space-y-6">
+      <div className="flex items-center gap-2">
+        <Layers className="w-4 h-4 text-primary" />
+        <div>
+          <h2 className="text-base font-bold">Signed KEM-DEM Architecture</h2>
+          <p className="text-xs text-muted-foreground">
+            Interactive visualization of the quantum-secure email pipeline.
+          </p>
+        </div>
+      </div>
 
       <div className="grid grid-cols-2 gap-5">
-        {/* Sender Workflow */}
         <div>
-          <h3 className="text-sm font-semibold text-quantum-green mb-3">Sender Workflow</h3>
+          <h3 className="text-sm font-semibold text-quantum-green mb-3 flex items-center gap-1.5">
+            <Send className="w-3.5 h-3.5" /> Sender Workflow
+          </h3>
           <div className="space-y-2">
             {SENDER_STEPS.map((step, i) => (
-              <StepBlock key={i} step={i + 1} title={step.title} desc={step.desc} color="green" />
+              <StepBlock key={i} step={i + 1} title={step.title} desc={step.desc} color="green" icon={SENDER_ICONS[i]} />
             ))}
           </div>
         </div>
 
-        {/* Receiver Workflow */}
         <div>
-          <h3 className="text-sm font-semibold text-quantum-blue mb-3">Receiver Workflow</h3>
+          <h3 className="text-sm font-semibold text-quantum-blue mb-3 flex items-center gap-1.5">
+            <Inbox className="w-3.5 h-3.5" /> Receiver Workflow
+          </h3>
           <div className="space-y-2">
             {RECEIVER_STEPS.map((step, i) => (
-              <StepBlock key={i} step={i + 1} title={step.title} desc={step.desc} color="blue" />
+              <StepBlock key={i} step={i + 1} title={step.title} desc={step.desc} color="blue" icon={RECEIVER_ICONS[i]} />
             ))}
           </div>
         </div>
       </div>
 
-      {/* PQC vs Classical */}
-      <div className="mt-8">
+      <div>
         <h2 className="text-base font-bold mb-3">Classical vs Post-Quantum Cryptography</h2>
-        <div className="bg-[var(--surface)] border border-[var(--border)] rounded overflow-hidden">
-          <table className="w-full text-xs">
-            <thead>
-              <tr className="bg-[var(--surface2)]">
-                <th className="text-left px-3 py-2">Property</th>
-                <th className="text-left px-3 py-2">Classical (RSA/ECDSA)</th>
-                <th className="text-left px-3 py-2">Post-Quantum (Kyber/Dilithium)</th>
-              </tr>
-            </thead>
-            <tbody>
-              {COMPARISON.map((row) => (
-                <tr key={row[0]} className="border-t border-[var(--border)]">
-                  <td className="px-3 py-1.5 font-medium">{row[0]}</td>
-                  <td className="px-3 py-1.5 text-[var(--text-dim)]">{row[1]}</td>
-                  <td className="px-3 py-1.5 text-quantum-green">{row[2]}</td>
+        <Card>
+          <CardContent className="p-0">
+            <table className="w-full text-xs">
+              <thead>
+                <tr className="bg-secondary">
+                  <th className="text-left px-3 py-2">Property</th>
+                  <th className="text-left px-3 py-2">Classical (RSA/ECDSA)</th>
+                  <th className="text-left px-3 py-2">Post-Quantum (Kyber/Dilithium)</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+              </thead>
+              <tbody>
+                {COMPARISON.map((row) => (
+                  <tr key={row[0]} className="border-t">
+                    <td className="px-3 py-1.5 font-medium">{row[0]}</td>
+                    <td className="px-3 py-1.5 text-muted-foreground">{row[1]}</td>
+                    <td className="px-3 py-1.5 text-quantum-green">{row[2]}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </CardContent>
+        </Card>
       </div>
     </div>
   );
@@ -61,22 +87,25 @@ function StepBlock({
   title,
   desc,
   color,
+  icon: Icon,
 }: {
   step: number;
   title: string;
   desc: string;
   color: "green" | "blue";
+  icon: React.ComponentType<{ className?: string }>;
 }) {
   const bg = color === "green" ? "bg-quantum-green/10" : "bg-quantum-blue/10";
   const text = color === "green" ? "text-quantum-green" : "text-quantum-blue";
 
   return (
-    <div className={`${bg} rounded p-2.5 border border-[var(--border)]`}>
+    <div className={cn(bg, "rounded-md p-2.5 border")}>
       <div className="flex items-center gap-2">
-        <span className={`${text} text-xs font-bold`}>{step}.</span>
+        <Icon className={cn("w-3.5 h-3.5", text)} />
+        <span className={cn(text, "text-xs font-bold")}>{step}.</span>
         <span className="text-xs font-semibold">{title}</span>
       </div>
-      <div className="text-[10px] text-[var(--text-dim)] mt-0.5 ml-5">{desc}</div>
+      <div className="text-[10px] text-muted-foreground mt-0.5 ml-5">{desc}</div>
     </div>
   );
 }

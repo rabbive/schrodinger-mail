@@ -1,5 +1,6 @@
-import clsx from "clsx";
+import { cn } from "@/lib/utils";
 import { useStore } from "@/hooks/useStore";
+import { ScrollArea } from "@/components/ui/scroll-area";
 import ComposeForm from "./ComposeForm";
 import EmailReader from "./EmailReader";
 import KeysPanel from "./KeysPanel";
@@ -11,6 +12,19 @@ import P2PPanel from "./P2PPanel";
 import DemoStoryline from "./DemoStoryline";
 import AttackLab from "./AttackLab";
 import TofuPanel from "./TofuPanel";
+import {
+  BookOpen,
+  FlaskConical,
+  PenSquare,
+  BookOpenCheck,
+  Globe,
+  ShieldCheck,
+  KeyRound,
+  Gauge,
+  ClipboardList,
+  Settings,
+  Layers,
+} from "lucide-react";
 
 type Tab =
   | "demo-guide"
@@ -25,18 +39,18 @@ type Tab =
   | "settings"
   | "architecture";
 
-const TABS: { id: Tab; label: string }[] = [
-  { id: "demo-guide", label: "Demo Guide" },
-  { id: "attack-lab", label: "Attack Lab" },
-  { id: "compose", label: "Compose" },
-  { id: "read", label: "Read" },
-  { id: "network", label: "Network" },
-  { id: "tofu", label: "Trust (TOFU)" },
-  { id: "keys", label: "Keys" },
-  { id: "benchmarks", label: "Benchmarks" },
-  { id: "audit", label: "Audit Log" },
-  { id: "settings", label: "Settings" },
-  { id: "architecture", label: "Architecture" },
+const TABS: { id: Tab; label: string; icon: React.ReactNode }[] = [
+  { id: "demo-guide", label: "Demo Guide", icon: <BookOpen className="w-3.5 h-3.5" /> },
+  { id: "attack-lab", label: "Attack Lab", icon: <FlaskConical className="w-3.5 h-3.5" /> },
+  { id: "compose", label: "Compose", icon: <PenSquare className="w-3.5 h-3.5" /> },
+  { id: "read", label: "Read", icon: <BookOpenCheck className="w-3.5 h-3.5" /> },
+  { id: "network", label: "Network", icon: <Globe className="w-3.5 h-3.5" /> },
+  { id: "tofu", label: "Trust (TOFU)", icon: <ShieldCheck className="w-3.5 h-3.5" /> },
+  { id: "keys", label: "Keys", icon: <KeyRound className="w-3.5 h-3.5" /> },
+  { id: "benchmarks", label: "Benchmarks", icon: <Gauge className="w-3.5 h-3.5" /> },
+  { id: "audit", label: "Audit Log", icon: <ClipboardList className="w-3.5 h-3.5" /> },
+  { id: "settings", label: "Settings", icon: <Settings className="w-3.5 h-3.5" /> },
+  { id: "architecture", label: "Architecture", icon: <Layers className="w-3.5 h-3.5" /> },
 ];
 
 interface Props {
@@ -50,42 +64,43 @@ export default function MainPanel({ showNotification }: Props) {
   const activeTab: Tab = VALID_TABS.has(rawTab as Tab) ? (rawTab as Tab) : "demo-guide";
 
   return (
-    <main className="overflow-hidden flex flex-col bg-[var(--bg)]">
-      {/* Tab bar */}
-      <div className="flex items-center gap-0 px-2 pt-0 pb-0 overflow-x-auto scrollbar-thin bg-[var(--surface)] border-b border-[var(--border)]">
+    <main className="overflow-hidden flex flex-col bg-background">
+      <div className="flex items-center gap-0 px-2 pt-0 pb-0 overflow-x-auto scrollbar-thin bg-card border-b">
         {TABS.map((tab) => (
           <button
             key={tab.id}
             onClick={() => setActiveTab(tab.id)}
-            className={clsx(
-              "px-3 py-2 text-[12px] font-medium transition-colors whitespace-nowrap border-b-2",
+            className={cn(
+              "px-3 py-2 text-[12px] font-medium transition-colors whitespace-nowrap border-b-2 flex items-center gap-1.5",
               activeTab === tab.id
-                ? "text-[var(--text)] border-b-accent bg-[var(--bg)]"
-                : "text-[var(--text-muted)] border-b-transparent hover:text-[var(--text-dim)] hover:bg-[var(--surface2)]",
+                ? "text-foreground border-b-primary bg-background"
+                : "text-muted-foreground border-b-transparent hover:text-foreground/60 hover:bg-secondary",
               (tab.id === "demo-guide" || tab.id === "attack-lab") &&
                 activeTab !== tab.id &&
-                "text-accent/60",
+                "text-primary/60",
             )}
           >
+            {tab.icon}
             {tab.label}
           </button>
         ))}
       </div>
 
-      {/* Tab content */}
-      <div className="flex-1 overflow-y-auto p-5 scrollbar-thin">
-        {activeTab === "demo-guide" && <DemoStoryline />}
-        {activeTab === "attack-lab" && <AttackLab />}
-        {activeTab === "compose" && <ComposeForm showNotification={showNotification} />}
-        {activeTab === "read" && <EmailReader />}
-        {activeTab === "network" && <P2PPanel />}
-        {activeTab === "tofu" && <TofuPanel />}
-        {activeTab === "keys" && <KeysPanel />}
-        {activeTab === "benchmarks" && <BenchmarksPanel />}
-        {activeTab === "audit" && <AuditPanel />}
-        {activeTab === "settings" && <SettingsPanel />}
-        {activeTab === "architecture" && <ArchitecturePanel />}
-      </div>
+      <ScrollArea className="flex-1">
+        <div className="p-5">
+          {activeTab === "demo-guide" && <DemoStoryline />}
+          {activeTab === "attack-lab" && <AttackLab />}
+          {activeTab === "compose" && <ComposeForm showNotification={showNotification} />}
+          {activeTab === "read" && <EmailReader />}
+          {activeTab === "network" && <P2PPanel />}
+          {activeTab === "tofu" && <TofuPanel />}
+          {activeTab === "keys" && <KeysPanel />}
+          {activeTab === "benchmarks" && <BenchmarksPanel />}
+          {activeTab === "audit" && <AuditPanel />}
+          {activeTab === "settings" && <SettingsPanel />}
+          {activeTab === "architecture" && <ArchitecturePanel />}
+        </div>
+      </ScrollArea>
     </main>
   );
 }

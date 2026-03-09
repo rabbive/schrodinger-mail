@@ -1,6 +1,21 @@
 import { useEffect, useState } from "react";
 import { useStore } from "@/hooks/useStore";
 import { api } from "@/services/api";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
+import { Badge } from "@/components/ui/badge";
+import {
+  Settings,
+  User,
+  Save,
+  PenLine,
+  FileText,
+  Download,
+  FlaskConical,
+  CheckCircle2,
+} from "lucide-react";
 
 export default function SettingsPanel() {
   const { activeUser } = useStore();
@@ -31,90 +46,98 @@ export default function SettingsPanel() {
 
   return (
     <div className="max-w-lg space-y-6">
-      <h2 className="text-base font-bold">Settings</h2>
+      <div className="flex items-center gap-2">
+        <Settings className="w-4 h-4 text-primary" />
+        <h2 className="text-base font-bold">Settings</h2>
+      </div>
 
       {saved && (
-        <div className="text-xs text-quantum-green font-semibold">Saved successfully.</div>
+        <Badge variant="success" className="gap-1">
+          <CheckCircle2 className="w-3 h-3" /> Saved successfully.
+        </Badge>
       )}
 
-      {/* Account */}
-      <section className="space-y-2">
-        <h3 className="text-sm font-semibold">Account</h3>
-        <div className="bg-[var(--surface)] border border-[var(--border)] rounded p-3 space-y-3">
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-1.5">
+            <User className="w-3.5 h-3.5" /> Account
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-3">
           <div className="flex items-center justify-between text-sm">
-            <span className="text-[var(--text-dim)]">Username</span>
+            <span className="text-muted-foreground">Username</span>
             <span className="font-semibold capitalize">{activeUser}</span>
           </div>
           <div className="flex items-center gap-2">
-            <input
+            <Input
               type="password"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               placeholder="New password"
-              className="flex-1 px-2 py-1.5 bg-[var(--bg)] border border-[var(--border)] rounded text-xs text-[var(--text)] focus:outline-none focus:border-accent"
             />
-            <button
-              onClick={savePassword}
-              className="px-3 py-1.5 bg-accent text-white text-xs font-semibold rounded hover:bg-accent-light transition-colors"
-            >
-              Save
-            </button>
+            <Button size="sm" onClick={savePassword}>
+              <Save className="w-3.5 h-3.5" /> Save
+            </Button>
           </div>
-        </div>
-      </section>
+        </CardContent>
+      </Card>
 
-      {/* Signature */}
-      <section className="space-y-2">
-        <h3 className="text-sm font-semibold">Email Signature</h3>
-        <div className="bg-[var(--surface)] border border-[var(--border)] rounded p-3 space-y-2">
-          <textarea
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-1.5">
+            <PenLine className="w-3.5 h-3.5" /> Email Signature
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-2">
+          <Textarea
             value={signature}
             onChange={(e) => setSignature(e.target.value)}
             placeholder="Your email signature..."
             rows={3}
-            className="w-full px-2 py-1.5 bg-[var(--bg)] border border-[var(--border)] rounded text-xs text-[var(--text)] focus:outline-none focus:border-accent resize-y"
+            className="resize-y"
           />
-          <button
-            onClick={saveSignature}
-            className="px-3 py-1.5 bg-accent text-white text-xs font-semibold rounded hover:bg-accent-light transition-colors"
-          >
-            Save Signature
-          </button>
-        </div>
-      </section>
+          <Button size="sm" onClick={saveSignature}>
+            <Save className="w-3.5 h-3.5" /> Save Signature
+          </Button>
+        </CardContent>
+      </Card>
 
-      {/* Security Report */}
-      <section className="space-y-2">
-        <h3 className="text-sm font-semibold">Security Report</h3>
-        <div className="bg-[var(--surface)] border border-[var(--border)] rounded p-3">
-          <p className="text-xs text-[var(--text-dim)] mb-2">
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-1.5">
+            <FileText className="w-3.5 h-3.5" /> Security Report
+          </CardTitle>
+          <CardDescription>
             Download a comprehensive HTML report of your security configuration.
-          </p>
-          <a
-            href={`/api/report/${activeUser}`}
-            className="inline-block px-3 py-1.5 bg-accent text-white text-xs font-semibold rounded hover:bg-accent-light transition-colors"
-          >
-            Download Report
-          </a>
-        </div>
-      </section>
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <Button size="sm" asChild>
+            <a href={`/api/report/${activeUser}`}>
+              <Download className="w-3.5 h-3.5" /> Download Report
+            </a>
+          </Button>
+        </CardContent>
+      </Card>
 
-      {/* Demo Evidence Report */}
-      <section className="space-y-2">
-        <h3 className="text-sm font-semibold">Demo Evidence Report</h3>
-        <div className="bg-[var(--surface)] border border-[var(--border)] rounded p-3 space-y-2">
-          <p className="text-xs text-[var(--text-dim)]">
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-1.5">
+            <FlaskConical className="w-3.5 h-3.5" /> Demo Evidence Report
+          </CardTitle>
+          <CardDescription>
             Export a comprehensive evidence bundle with algorithm details, attack outcomes, benchmarks,
             key fingerprints, and a full audit trail. Includes machine-readable JSON.
-          </p>
-          <a
-            href={api.getDemoReportUrl(activeUser)}
-            className="inline-block px-3 py-1.5 bg-quantum-green text-white text-xs font-semibold rounded hover:bg-quantum-green/80 transition-colors"
-          >
-            Export Demo Evidence
-          </a>
-        </div>
-      </section>
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <Button size="sm" className="bg-quantum-green text-white hover:bg-quantum-green/90" asChild>
+            <a href={api.getDemoReportUrl(activeUser)}>
+              <Download className="w-3.5 h-3.5" /> Export Demo Evidence
+            </a>
+          </Button>
+        </CardContent>
+      </Card>
     </div>
   );
 }
