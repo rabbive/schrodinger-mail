@@ -38,7 +38,7 @@ logger = logging.getLogger(__name__)
 
 # ── Flask app ────────────────────────────────────────────────────────────────
 
-app = Flask(__name__)
+app = Flask(__name__, static_folder="static", static_url_path="")
 app.secret_key = config.SECRET_KEY
 app.config["MAX_CONTENT_LENGTH"] = config.MAX_ATTACHMENT_BYTES + 1024 * 1024
 app.config["SESSION_COOKIE_HTTPONLY"] = True
@@ -307,8 +307,8 @@ def _record_duration(response):
 @app.route("/")
 @app.route("/dashboard")
 def home():
-    """Main single-page application."""
-    return render_template("index.html")
+    """Main single-page application (React SPA)."""
+    return send_file("static/index.html")
 
 
 # ── Routes: Auth ─────────────────────────────────────────────────────────────

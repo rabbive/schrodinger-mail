@@ -67,63 +67,70 @@ export default function P2PPanel() {
     }
   };
 
+  const verified = contacts.filter((c) => c.verified);
+  const unverified = contacts.filter((c) => !c.verified);
+  const sorted = [...verified, ...unverified];
+
+  const inputClass =
+    "w-full px-3 py-1.5 bg-[var(--bg)] border border-[var(--border)] rounded text-[13px] text-[var(--text)] placeholder-[var(--text-muted)] focus:outline-none focus:border-accent transition-colors";
+
   return (
     <div className="max-w-2xl space-y-4">
-      {/* Header row */}
+      {/* Header */}
       <div className="flex items-center justify-between">
-        <div className="space-y-0.5">
-          <h2 className="text-sm font-bold text-[var(--text)]">Network & Contacts</h2>
-          <p className="text-xs text-[var(--text-dim)]">
-            Manage contacts and P2P LAN peer addresses for direct encrypted delivery.
+        <div>
+          <h2 className="text-[13px] font-semibold text-[var(--text)]">Network & Contacts</h2>
+          <p className="text-[11px] text-[var(--text-muted)] mt-0.5">
+            Manage contacts and peer addresses for direct encrypted delivery.
           </p>
         </div>
         <button
           onClick={() => setShowForm((v) => !v)}
-          className="px-3 py-1.5 bg-accent text-white text-xs font-semibold rounded hover:bg-accent-light transition-colors"
+          className="px-3 py-1.5 bg-accent text-white text-[12px] font-medium rounded hover:bg-accent-light transition-colors"
         >
-          {showForm ? "Cancel" : "+ Add Contact"}
+          {showForm ? "Cancel" : "Add Contact"}
         </button>
       </div>
 
       {/* Mode badge */}
-      <div className="flex items-center gap-2 p-3 rounded-lg bg-[var(--surface)] border border-[var(--border)]">
+      <div className="flex items-center gap-3 p-3 rounded border border-[var(--border)] bg-[var(--surface)]">
         <span
           className={clsx(
             "w-2 h-2 rounded-full flex-shrink-0",
-            isP2P ? "bg-quantum-green animate-pulse" : "bg-[var(--text-dim)]",
+            isP2P ? "bg-quantum-green animate-pulse-gentle" : "bg-[var(--text-muted)]",
           )}
         />
         <div className="flex-1 min-w-0">
-          <span className="text-xs font-semibold text-[var(--text)]">
+          <span className="text-[12px] font-medium text-[var(--text)]">
             {isP2P ? "P2P LAN Mode Active" : "Demo / Server Mode"}
           </span>
-          <p className="text-[11px] text-[var(--text-dim)] mt-0.5">
+          <p className="text-[11px] text-[var(--text-muted)] mt-0.5">
             {isP2P
-              ? "Emails sent to contacts with a peer address are delivered directly over the local network — no server relay."
-              : "Running in demo mode. Set QEC_P2P_ENABLED=1 to activate peer-to-peer LAN delivery."}
+              ? "Contacts with a peer address receive mail directly over LAN."
+              : "Running in demo mode. Set QEC_P2P_ENABLED=1 for peer-to-peer delivery."}
           </p>
         </div>
         <span
           className={clsx(
-            "px-2 py-0.5 text-[10px] font-bold rounded flex-shrink-0",
+            "px-2 py-0.5 text-[10px] font-mono font-medium rounded border flex-shrink-0",
             isP2P
-              ? "bg-quantum-green/15 text-quantum-green"
-              : "bg-[var(--surface2)] text-[var(--text-dim)]",
+              ? "bg-quantum-green/10 text-quantum-green border-quantum-green/20"
+              : "bg-[var(--surface2)] text-[var(--text-muted)] border-[var(--border)]",
           )}
         >
           {isP2P ? "P2P" : "DEMO"}
         </span>
       </div>
 
-      {/* Add contact form */}
+      {/* Add form */}
       {showForm && (
-        <div className="p-4 rounded-lg bg-[var(--surface)] border border-[var(--border)] space-y-3">
-          <h3 className="text-xs font-bold uppercase tracking-wider text-[var(--text-dim)]">
+        <div className="p-4 rounded border border-[var(--border)] bg-[var(--surface)] space-y-3">
+          <div className="text-[10px] font-semibold uppercase tracking-wider text-[var(--text-muted)]">
             New Contact
-          </h3>
+          </div>
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1">
-              <label className="text-[11px] font-semibold text-[var(--text-dim)]">
+              <label className="text-[11px] font-medium text-[var(--text-dim)]">
                 Display Name <span className="text-quantum-red">*</span>
               </label>
               <input
@@ -131,11 +138,11 @@ export default function P2PPanel() {
                 value={form.name}
                 onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
                 placeholder="Alice"
-                className="w-full px-3 py-1.5 bg-[var(--bg)] border border-[var(--border)] rounded text-sm text-[var(--text)] focus:outline-none focus:border-accent"
+                className={inputClass}
               />
             </div>
             <div className="space-y-1">
-              <label className="text-[11px] font-semibold text-[var(--text-dim)]">
+              <label className="text-[11px] font-medium text-[var(--text-dim)]">
                 Username <span className="text-quantum-red">*</span>
               </label>
               <input
@@ -143,47 +150,44 @@ export default function P2PPanel() {
                 value={form.username}
                 onChange={(e) => setForm((f) => ({ ...f, username: e.target.value }))}
                 placeholder="alice"
-                className="w-full px-3 py-1.5 bg-[var(--bg)] border border-[var(--border)] rounded text-sm text-[var(--text)] focus:outline-none focus:border-accent"
+                className={inputClass}
               />
             </div>
           </div>
           <div className="space-y-1">
-            <label className="text-[11px] font-semibold text-[var(--text-dim)]">
-              Peer Address{" "}
-              <span className="text-[var(--text-dim)] font-normal">(optional — for P2P LAN delivery)</span>
+            <label className="text-[11px] font-medium text-[var(--text-dim)]">
+              Peer Address
+              <span className="font-normal text-[var(--text-muted)]"> (optional — P2P LAN delivery)</span>
             </label>
             <input
               type="text"
               value={form.peer_address}
               onChange={(e) => setForm((f) => ({ ...f, peer_address: e.target.value }))}
               placeholder="192.168.1.10:6001"
-              className="w-full px-3 py-1.5 bg-[var(--bg)] border border-[var(--border)] rounded text-sm font-mono text-[var(--text)] focus:outline-none focus:border-accent"
+              className={clsx(inputClass, "font-mono")}
             />
-            <p className="text-[10px] text-[var(--text-dim)]">
-              Format: IP:port — mail to this contact bypasses the server and goes directly over LAN.
-            </p>
           </div>
           <div className="space-y-1">
-            <label className="text-[11px] font-semibold text-[var(--text-dim)]">Notes</label>
+            <label className="text-[11px] font-medium text-[var(--text-dim)]">Notes</label>
             <input
               type="text"
               value={form.notes}
               onChange={(e) => setForm((f) => ({ ...f, notes: e.target.value }))}
               placeholder="Optional notes..."
-              className="w-full px-3 py-1.5 bg-[var(--bg)] border border-[var(--border)] rounded text-sm text-[var(--text)] focus:outline-none focus:border-accent"
+              className={inputClass}
             />
           </div>
           <div className="flex gap-2 pt-1">
             <button
               onClick={handleAdd}
               disabled={submitting || !form.name.trim() || !form.username.trim()}
-              className="px-4 py-1.5 bg-accent text-white text-xs font-semibold rounded hover:bg-accent-light transition-colors disabled:opacity-50"
+              className="px-4 py-1.5 bg-accent text-white text-[12px] font-medium rounded hover:bg-accent-light transition-colors disabled:opacity-50"
             >
               {submitting ? "Adding..." : "Add Contact"}
             </button>
             <button
               onClick={() => setShowForm(false)}
-              className="px-3 py-1.5 bg-[var(--surface2)] text-[var(--text-dim)] text-xs rounded hover:bg-[var(--border)] transition-colors"
+              className="px-3 py-1.5 bg-[var(--surface2)] text-[var(--text-dim)] text-[12px] rounded border border-[var(--border)] hover:bg-[var(--surface3)] transition-colors"
             >
               Cancel
             </button>
@@ -193,20 +197,20 @@ export default function P2PPanel() {
 
       {/* Error */}
       {error && (
-        <div className="px-3 py-2 rounded bg-quantum-red/10 border border-quantum-red/30 text-xs text-quantum-red">
+        <div className="px-3 py-2 rounded bg-quantum-red/8 border border-quantum-red/20 text-[12px] text-quantum-red">
           {error}
         </div>
       )}
 
-      {/* Contacts list */}
+      {/* Contact list */}
       <div className="space-y-2">
         <div className="flex items-center justify-between">
-          <span className="text-[10px] font-bold uppercase tracking-wider text-[var(--text-dim)]">
+          <span className="text-[10px] font-semibold uppercase tracking-wider text-[var(--text-muted)]">
             Contacts ({contacts.length})
           </span>
           <button
             onClick={loadContacts}
-            className="text-[10px] text-accent hover:text-accent-light transition-colors"
+            className="text-[10px] text-[var(--text-muted)] hover:text-accent transition-colors"
           >
             Refresh
           </button>
@@ -217,66 +221,58 @@ export default function P2PPanel() {
             <div className="w-5 h-5 border-2 border-accent border-t-transparent rounded-full animate-spin" />
           </div>
         ) : contacts.length === 0 ? (
-          <div className="py-8 text-center text-xs text-[var(--text-dim)]">
+          <div className="py-8 text-center text-[11px] text-[var(--text-muted)]">
             No contacts yet. Add one above.
           </div>
         ) : (
-          <div className="rounded-lg border border-[var(--border)] overflow-hidden">
-            {contacts.map((contact, i) => (
+          <div className="rounded border border-[var(--border)] overflow-hidden">
+            {sorted.map((contact, i) => (
               <div
                 key={contact.id}
                 className={clsx(
-                  "flex items-center gap-3 px-4 py-3",
-                  i < contacts.length - 1 && "border-b border-[var(--border)]",
+                  "flex items-center gap-3 px-3 py-2.5",
+                  i < sorted.length - 1 && "border-b border-[var(--border)]",
                   "bg-[var(--surface)] hover:bg-[var(--surface2)] transition-colors",
                 )}
               >
-                {/* Avatar */}
-                <div className="w-8 h-8 rounded-full bg-accent/20 flex items-center justify-center flex-shrink-0">
-                  <span className="text-xs font-bold text-accent">
+                <div className="w-7 h-7 rounded bg-accent/10 flex items-center justify-center flex-shrink-0">
+                  <span className="text-[11px] font-bold text-accent">
                     {contact.name.charAt(0).toUpperCase()}
                   </span>
                 </div>
 
-                {/* Info */}
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2">
-                    <span className="text-sm font-semibold text-[var(--text)] truncate">
+                    <span className="text-[12px] font-medium text-[var(--text)] truncate">
                       {contact.name}
                     </span>
-                    <span className="text-[11px] text-[var(--text-dim)]">@{contact.username}</span>
+                    <span className="text-[11px] font-mono text-[var(--text-muted)]">@{contact.username}</span>
                     {contact.verified && (
-                      <span className="px-1.5 py-0.5 bg-quantum-green/15 text-quantum-green text-[9px] font-bold rounded">
-                        Verified
+                      <span className="px-1 py-0.5 bg-quantum-green/10 text-quantum-green text-[9px] font-mono font-medium rounded">
+                        verified
                       </span>
                     )}
                   </div>
                   <div className="flex items-center gap-3 mt-0.5">
                     {contact.peer_address ? (
-                      <span className="flex items-center gap-1 text-[11px] font-mono text-accent">
-                        <span className="w-1.5 h-1.5 rounded-full bg-accent" />
+                      <span className="flex items-center gap-1 text-[10px] font-mono text-accent">
+                        <span className="w-1 h-1 rounded-full bg-accent" />
                         {contact.peer_address}
                       </span>
                     ) : (
-                      <span className="text-[11px] text-[var(--text-dim)]">No P2P address</span>
+                      <span className="text-[10px] text-[var(--text-muted)]">server relay</span>
                     )}
                     {contact.kyber_fingerprint && (
-                      <span className="text-[10px] font-mono text-[var(--text-dim)] truncate max-w-[120px]">
-                        KEM: {contact.kyber_fingerprint.slice(0, 12)}…
+                      <span className="text-[9px] font-mono text-[var(--text-muted)] truncate max-w-[100px]">
+                        KEM:{contact.kyber_fingerprint.slice(0, 10)}
                       </span>
                     )}
                   </div>
-                  {contact.notes && (
-                    <div className="text-[11px] text-[var(--text-dim)] mt-0.5 truncate">
-                      {contact.notes}
-                    </div>
-                  )}
                 </div>
 
-                {/* Actions */}
                 <button
                   onClick={() => handleDelete(contact.id)}
-                  className="text-[11px] text-quantum-red/60 hover:text-quantum-red transition-colors flex-shrink-0"
+                  className="text-[10px] text-[var(--text-muted)] hover:text-quantum-red transition-colors flex-shrink-0"
                   title="Remove contact"
                 >
                   Remove
@@ -287,17 +283,17 @@ export default function P2PPanel() {
         )}
       </div>
 
-      {/* P2P info box */}
-      <div className="p-3 rounded-lg border border-[var(--border)] bg-[var(--surface)] text-[11px] text-[var(--text-dim)] space-y-1">
-        <div className="font-semibold text-[var(--text)] text-xs mb-1">How P2P LAN delivery works</div>
+      {/* Info */}
+      <div className="p-3 rounded border border-[var(--border)] bg-[var(--surface)] text-[11px] text-[var(--text-muted)] space-y-1.5">
+        <div className="font-medium text-[var(--text-dim)] text-[12px]">How P2P LAN delivery works</div>
         <p>
-          When a contact has a peer address set, encrypted mail is sent directly to their node over your
-          local network via <span className="font-mono text-accent">POST /p2p/incoming</span>. The
-          cryptographic payload (KEM + signature + ciphertext) is identical — only the transport changes.
+          When a contact has a peer address, encrypted mail is sent directly to their node over the local
+          network via <span className="font-mono text-accent">POST /p2p/incoming</span>. The cryptographic
+          payload is identical to server relay — only the transport changes.
         </p>
         <p>
           Both nodes must run Schrödinger Mail with <span className="font-mono text-accent">QEC_P2P_ENABLED=1</span> and
-          be reachable on the same LAN segment.
+          be reachable on the same LAN.
         </p>
       </div>
     </div>

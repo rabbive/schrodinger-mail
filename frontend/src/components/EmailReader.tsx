@@ -7,9 +7,11 @@ export default function EmailReader() {
 
   if (!selected) {
     return (
-      <div className="flex flex-col items-center justify-center h-64 text-[var(--text-dim)]">
-        <div className="text-4xl mb-3">✉</div>
-        <div className="text-sm">Select an email from the sidebar to read it.</div>
+      <div className="flex flex-col items-center justify-center h-64 text-[var(--text-muted)]">
+        <div className="w-10 h-10 rounded-lg bg-[var(--surface2)] border border-[var(--border)] flex items-center justify-center text-lg mb-3">
+          ✉
+        </div>
+        <div className="text-[12px]">Select an email from the sidebar to read it.</div>
       </div>
     );
   }
@@ -22,51 +24,51 @@ export default function EmailReader() {
     <div className="max-w-2xl">
       <div className="mb-4">
         <div className="flex items-center gap-2 mb-2">
-          <span className="text-lg font-bold">{selected.subject || "(no subject)"}</span>
+          <span className="text-base font-semibold text-[var(--text)]">{selected.subject || "(no subject)"}</span>
           {selected.verified ? (
-            <span className="px-2 py-0.5 bg-quantum-green/15 text-quantum-green text-[10px] font-bold rounded">
-              ✓ Verified
+            <span className="px-1.5 py-0.5 bg-quantum-green/10 text-quantum-green text-[10px] font-mono font-medium rounded">
+              verified
             </span>
           ) : (
-            <span className="px-2 py-0.5 bg-quantum-red/15 text-quantum-red text-[10px] font-bold rounded">
-              ✗ Verification Failed
+            <span className="px-1.5 py-0.5 bg-quantum-red/10 text-quantum-red text-[10px] font-mono font-medium rounded">
+              unverified
             </span>
           )}
         </div>
-        <div className="text-xs text-[var(--text-dim)] space-y-0.5">
+        <div className="text-[12px] text-[var(--text-dim)] space-y-0.5">
           <div>
-            From: <span className="font-semibold capitalize text-[var(--text)]">{selected.sender}</span>
+            From: <span className="font-medium capitalize text-[var(--text)]">{selected.sender}</span>
           </div>
           {selected.thread_id && (
             <div>
-              Thread: <span className="font-mono text-quantum-blue">{selected.thread_id.slice(0, 8)}...</span>
+              Thread: <span className="font-mono text-accent text-[11px]">{selected.thread_id.slice(0, 8)}...</span>
             </div>
           )}
-          <div>{selected.timestamp}</div>
+          <div className="text-[var(--text-muted)]">{selected.timestamp}</div>
         </div>
       </div>
 
       {selected.error && (
-        <div className="mb-3 p-3 bg-quantum-red/10 border border-quantum-red/30 rounded text-xs text-quantum-red">
+        <div className="mb-3 p-3 bg-quantum-red/8 border border-quantum-red/20 rounded text-[12px] text-quantum-red">
           {selected.error}
         </div>
       )}
 
-      <div className="p-4 bg-[var(--surface)] border border-[var(--border)] rounded text-sm whitespace-pre-wrap leading-relaxed font-mono">
+      <div className="p-4 bg-[var(--surface)] border border-[var(--border)] rounded text-[13px] whitespace-pre-wrap leading-relaxed font-mono text-[var(--text)]">
         {bodyText}
       </div>
 
       <div className="flex gap-2 mt-4">
-        <button className="px-3 py-1.5 bg-accent text-white text-xs font-semibold rounded hover:bg-accent-light transition-colors">
+        <button className="px-3 py-1.5 bg-accent text-white text-[12px] font-medium rounded hover:bg-accent-light transition-colors">
           Reply
         </button>
-        <button className="px-3 py-1.5 bg-[var(--surface2)] text-[var(--text-dim)] text-xs font-medium rounded hover:bg-[var(--border)] transition-colors">
+        <button className="px-3 py-1.5 bg-[var(--surface2)] text-[var(--text-dim)] text-[12px] font-medium rounded border border-[var(--border)] hover:bg-[var(--surface3)] transition-colors">
           Forward
         </button>
-        <button className="px-3 py-1.5 bg-[var(--surface2)] text-[var(--text-dim)] text-xs font-medium rounded hover:bg-[var(--border)] transition-colors">
+        <button className="px-3 py-1.5 bg-[var(--surface2)] text-[var(--text-dim)] text-[12px] font-medium rounded border border-[var(--border)] hover:bg-[var(--surface3)] transition-colors">
           Archive
         </button>
-        <button className="px-3 py-1.5 bg-quantum-red/15 text-quantum-red text-xs font-medium rounded hover:bg-quantum-red/25 transition-colors">
+        <button className="px-3 py-1.5 bg-quantum-red/10 text-quantum-red text-[12px] font-medium rounded border border-quantum-red/20 hover:bg-quantum-red/15 transition-colors">
           Delete
         </button>
       </div>

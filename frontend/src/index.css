@@ -1,29 +1,38 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&display=swap');
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
 :root {
-  --surface: #161b22;
-  --surface2: #21262d;
-  --bg: #0d1117;
-  --border: #30363d;
-  --text: #e6edf3;
-  --text-dim: #7d8590;
-  --accent: #0891b2;
-  --accent2: #67e8f9;
+  --bg: #0a0c10;
+  --surface: #12151a;
+  --surface2: #1a1e25;
+  --surface3: #22272e;
+  --border: #262b33;
+  --border-light: #2d333b;
+  --text: #cdd6e0;
+  --text-dim: #636e7b;
+  --text-muted: #444c56;
+  --accent: #4493f8;
+  --accent2: #79c0ff;
   --green: #3fb950;
   --red: #f85149;
   --orange: #d29922;
   --blue: #58a6ff;
+  --radius: 6px;
 }
 
 .light {
+  --bg: #f6f8fa;
   --surface: #ffffff;
-  --surface2: #f6f8fa;
-  --bg: #f0f2f5;
-  --border: #d0d7de;
+  --surface2: #f0f2f5;
+  --surface3: #e8ebef;
+  --border: #d1d9e0;
+  --border-light: #dde2e8;
   --text: #1f2328;
-  --text-dim: #656d76;
+  --text-dim: #636e7b;
+  --text-muted: #8b949e;
 }
 
 * {
@@ -35,8 +44,28 @@
 body {
   background: var(--bg);
   color: var(--text);
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  font-family: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  font-size: 13px;
+  line-height: 1.5;
   -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+@layer base {
+  ::selection {
+    background: var(--accent);
+    color: #fff;
+  }
+
+  input, textarea, select {
+    font-family: inherit;
+  }
+
+  :focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 1px;
+    border-radius: var(--radius);
+  }
 }
 
 @layer utilities {
@@ -44,4 +73,22 @@ body {
     scrollbar-width: thin;
     scrollbar-color: var(--border) transparent;
   }
+  .font-mono {
+    font-family: "JetBrains Mono", "SF Mono", "Cascadia Code", "Fira Code", "Consolas", monospace;
+  }
+}
+
+@keyframes fadeSlideIn {
+  from { opacity: 0; transform: translateY(4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes pulse-gentle {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
 }

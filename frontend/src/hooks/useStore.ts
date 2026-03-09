@@ -115,10 +115,12 @@ export const useStore = create<Store>((set, get) => ({
   },
 
   receiveEmails: async () => {
-    const { activeUser } = get();
+    const { activeUser, loading } = get();
+    if (loading) return;
     set({ loading: true });
     try {
       const result = await api.receive(activeUser);
+      if (get().activeUser !== activeUser) return;
       get().addCryptoSteps(result.steps);
       await get().loadFolders();
       await get().loadEmails();

@@ -30,20 +30,17 @@ export default function App() {
       });
   }, [init]);
 
-  // Auto-receive: Socket.IO with polling fallback
   useEffect(() => {
     if (!ready) return;
 
     const wsEnabled = appState?.features?.websockets ?? false;
 
-    // Clear previous interval if any
     if (pollIntervalRef.current) {
       clearInterval(pollIntervalRef.current);
       pollIntervalRef.current = null;
     }
 
     if (wsEnabled) {
-      // Disconnect previous socket before creating a new one
       if (socketRef.current) {
         socketRef.current.disconnect();
       }
@@ -58,7 +55,6 @@ export default function App() {
         receiveEmails();
       });
     } else {
-      // Polling fallback: check every 30 seconds
       pollIntervalRef.current = setInterval(() => {
         receiveEmails();
       }, 30_000);
@@ -79,14 +75,17 @@ export default function App() {
 
   if (!ready || !appState) {
     return (
-      <div className="flex items-center justify-center h-screen">
-        <div className="animate-spin w-8 h-8 border-4 border-accent border-t-transparent rounded-full" />
+      <div className="flex items-center justify-center h-screen bg-[var(--bg)]">
+        <div className="flex flex-col items-center gap-3">
+          <div className="w-6 h-6 border-2 border-accent border-t-transparent rounded-full animate-spin" />
+          <span className="text-[11px] text-[var(--text-muted)] font-mono">Initializing...</span>
+        </div>
       </div>
     );
   }
 
   return (
-    <div className="h-screen grid grid-rows-[52px_1fr] grid-cols-[240px_1fr_320px] max-xl:grid-cols-[200px_1fr_300px] max-lg:grid-cols-1">
+    <div className="h-screen grid grid-rows-[48px_1fr] grid-cols-[220px_1fr_300px] max-xl:grid-cols-[200px_1fr_280px] max-lg:grid-cols-1">
       <Header />
       <Sidebar />
       <MainPanel showNotification={(msg, type) => setNotification({ message: msg, type })} />

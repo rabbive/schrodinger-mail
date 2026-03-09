@@ -43,16 +43,16 @@ export default function MainPanel({ showNotification }: Props) {
   return (
     <main className="overflow-hidden flex flex-col bg-[var(--bg)]">
       {/* Tab bar */}
-      <div className="flex items-center gap-0.5 px-3 pt-2 pb-0 overflow-x-auto scrollbar-thin border-b border-[var(--border)]">
+      <div className="flex items-center gap-0 px-2 pt-0 pb-0 overflow-x-auto scrollbar-thin bg-[var(--surface)] border-b border-[var(--border)]">
         {TABS.map((tab) => (
           <button
             key={tab.id}
             onClick={() => setActiveTab(tab.id)}
             className={clsx(
-              "px-3 py-1.5 text-xs font-medium rounded-t transition-colors whitespace-nowrap",
+              "px-3 py-2 text-[12px] font-medium transition-colors whitespace-nowrap border-b-2",
               activeTab === tab.id
-                ? "bg-[var(--surface)] text-accent border border-[var(--border)] border-b-transparent -mb-px"
-                : "text-[var(--text-dim)] hover:text-[var(--text)] hover:bg-[var(--surface2)]",
+                ? "text-[var(--text)] border-b-accent bg-[var(--bg)]"
+                : "text-[var(--text-muted)] border-b-transparent hover:text-[var(--text-dim)] hover:bg-[var(--surface2)]",
             )}
           >
             {tab.label}
@@ -61,7 +61,7 @@ export default function MainPanel({ showNotification }: Props) {
       </div>
 
       {/* Tab content */}
-      <div className="flex-1 overflow-y-auto p-4 scrollbar-thin">
+      <div className="flex-1 overflow-y-auto p-5 scrollbar-thin">
         {activeTab === "compose" && <ComposeForm showNotification={showNotification} />}
         {activeTab === "read" && <EmailReader />}
         {activeTab === "network" && <P2PPanel />}

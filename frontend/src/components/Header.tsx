@@ -2,29 +2,33 @@ import { useStore } from "@/hooks/useStore";
 import clsx from "clsx";
 
 export default function Header() {
-  const { appState, activeUser, setActiveUser, toggleTheme } = useStore();
+  const { appState, activeUser, setActiveUser, toggleTheme, theme } = useStore();
   const users = appState ? Object.keys(appState.users) : [];
 
   return (
-    <header className="col-span-full flex items-center gap-3 px-4 border-b border-[var(--border)] bg-[var(--surface)]">
-      <div className="flex items-center gap-2 font-bold text-lg">
-        <span className="w-7 h-7 rounded-lg bg-accent flex items-center justify-center text-white text-sm font-bold">
-          Q
+    <header className="col-span-full flex items-center gap-3 px-4 h-[48px] border-b border-[var(--border)] bg-[var(--surface)]">
+      <div className="flex items-center gap-2.5">
+        <span className="w-6 h-6 rounded bg-accent flex items-center justify-center text-white text-xs font-bold tracking-tight">
+          S
         </span>
-        <span className="text-[var(--text)]">uantum Mail</span>
+        <span className="font-semibold text-sm text-[var(--text)] tracking-tight">
+          Schrödinger Mail
+        </span>
       </div>
 
-      <div className="flex items-center gap-1.5 ml-3">
+      <div className="h-4 w-px bg-[var(--border)] mx-1" />
+
+      <div className="flex items-center gap-1.5">
         {appState && (
           <>
-            <span className="px-2 py-0.5 bg-accent/15 text-accent text-[10px] font-bold rounded">
-              KEM: {appState.kem_algorithm}
+            <span className="px-1.5 py-0.5 bg-[var(--surface2)] text-[var(--text-dim)] text-[10px] font-mono font-medium rounded border border-[var(--border)]">
+              {appState.kem_algorithm}
             </span>
-            <span className="px-2 py-0.5 bg-quantum-green/15 text-quantum-green text-[10px] font-bold rounded">
-              SIG: {appState.sig_algorithm}
+            <span className="px-1.5 py-0.5 bg-[var(--surface2)] text-[var(--text-dim)] text-[10px] font-mono font-medium rounded border border-[var(--border)]">
+              {appState.sig_algorithm}
             </span>
-            <span className="px-2 py-0.5 bg-quantum-blue/15 text-quantum-blue text-[10px] font-bold rounded">
-              DEM: AES-256-GCM
+            <span className="px-1.5 py-0.5 bg-[var(--surface2)] text-[var(--text-dim)] text-[10px] font-mono font-medium rounded border border-[var(--border)]">
+              AES-256-GCM
             </span>
           </>
         )}
@@ -34,11 +38,13 @@ export default function Header() {
 
       <button
         onClick={toggleTheme}
-        className="w-8 h-8 rounded-lg bg-[var(--surface2)] flex items-center justify-center text-sm hover:bg-[var(--border)] transition-colors"
+        className="w-7 h-7 rounded bg-[var(--surface2)] border border-[var(--border)] flex items-center justify-center text-[11px] text-[var(--text-dim)] hover:text-[var(--text)] hover:border-[var(--border-light)] transition-colors"
         title="Toggle theme"
       >
-        🌓
+        {theme === "dark" ? "☀" : "☾"}
       </button>
+
+      <div className="h-4 w-px bg-[var(--border)] mx-0.5" />
 
       <div className="flex items-center gap-1">
         {users.map((name) => (
@@ -46,10 +52,10 @@ export default function Header() {
             key={name}
             onClick={() => setActiveUser(name)}
             className={clsx(
-              "px-3 py-1 rounded text-xs font-semibold transition-colors",
+              "px-2.5 py-1 rounded text-xs font-medium transition-all",
               name === activeUser
-                ? "bg-accent text-white"
-                : "bg-[var(--surface2)] text-[var(--text-dim)] hover:bg-[var(--border)]",
+                ? "bg-accent/15 text-accent border border-accent/30"
+                : "bg-[var(--surface2)] text-[var(--text-dim)] border border-[var(--border)] hover:text-[var(--text)] hover:border-[var(--border-light)]",
             )}
           >
             {name.charAt(0).toUpperCase() + name.slice(1)}

@@ -9,18 +9,18 @@ interface Props {
 
 export default function Notification({ message, type, onDismiss }: Props) {
   useEffect(() => {
-    const timer = setTimeout(onDismiss, 3000);
+    const timer = setTimeout(onDismiss, 3500);
     return () => clearTimeout(timer);
   }, [onDismiss]);
 
   return (
     <div
       className={clsx(
-        "fixed top-14 left-1/2 -translate-x-1/2 px-5 py-2 rounded text-xs font-semibold z-50",
-        "animate-[fadeIn_0.2s_ease-out] shadow-lg",
-        type === "success" && "bg-quantum-green text-white",
-        type === "error" && "bg-quantum-red text-white",
-        type === "info" && "bg-accent text-white",
+        "fixed top-14 left-1/2 -translate-x-1/2 px-4 py-2 rounded text-[12px] font-medium z-50",
+        "animate-fade-in shadow-lg border",
+        type === "success" && "bg-quantum-green/15 text-quantum-green border-quantum-green/30",
+        type === "error" && "bg-quantum-red/15 text-quantum-red border-quantum-red/30",
+        type === "info" && "bg-accent/15 text-accent border-accent/30",
       )}
     >
       {message}
