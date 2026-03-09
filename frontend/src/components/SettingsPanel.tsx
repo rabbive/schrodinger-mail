@@ -98,6 +98,23 @@ export default function SettingsPanel() {
           </a>
         </div>
       </section>
+
+      {/* Demo Evidence Report */}
+      <section className="space-y-2">
+        <h3 className="text-sm font-semibold">Demo Evidence Report</h3>
+        <div className="bg-[var(--surface)] border border-[var(--border)] rounded p-3 space-y-2">
+          <p className="text-xs text-[var(--text-dim)]">
+            Export a comprehensive evidence bundle with algorithm details, attack outcomes, benchmarks,
+            key fingerprints, and a full audit trail. Includes machine-readable JSON.
+          </p>
+          <a
+            href={api.getDemoReportUrl(activeUser)}
+            className="inline-block px-3 py-1.5 bg-quantum-green text-white text-xs font-semibold rounded hover:bg-quantum-green/80 transition-colors"
+          >
+            Export Demo Evidence
+          </a>
+        </div>
+      </section>
     </div>
   );
 }

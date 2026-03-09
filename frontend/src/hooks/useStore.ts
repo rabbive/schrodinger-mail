@@ -52,7 +52,7 @@ export const useStore = create<Store>((set, get) => ({
   emails: [],
   folders: [],
   selectedEmailId: null,
-  activeTab: "compose",
+  activeTab: "demo-guide",
   cryptoLog: [],
   loading: false,
   theme: (localStorage.getItem("qec-theme") as "dark" | "light") || "dark",

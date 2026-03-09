@@ -180,4 +180,47 @@ export const api = {
 
   // Metrics
   getMetrics: () => get<Record<string, number>>("/api/metrics"),
+
+  // Verification details
+  getVerifyDetails: (username: string, emailId: number) =>
+    get<{
+      email_id: number;
+      verified: boolean;
+      error: string | null;
+      sender: string;
+      message_id: string | null;
+      timestamp: string | null;
+      algorithms: { kem: string; sig: string; dem: string };
+      key_sizes: Record<string, number>;
+      sender_fingerprints: Record<string, string>;
+      replay_cache_hit: boolean;
+      checks: Array<{ check: string; status: string; detail: string }>;
+    }>(`/api/verify-details/${username}/${emailId}`),
+
+  // Key rotation (TOFU)
+  rotateKeys: (username: string) =>
+    post<{
+      ok: boolean;
+      old_fingerprints: Record<string, string>;
+      new_fingerprints: Record<string, string>;
+      steps: CryptoStep[];
+      user: unknown;
+    }>(`/api/keys/rotate/${username}`),
+
+  // Network trace
+  getNetworkTrace: (username: string) =>
+    get<{
+      events: Array<{
+        action: string;
+        details: string;
+        ip: string;
+        timestamp: string;
+        transport: string;
+      }>;
+      mode: string;
+      local_address: string;
+    }>(`/api/network-trace/${username}`),
+
+  // Demo report
+  getDemoReportUrl: (username: string) => `/api/demo-report/${username}`,
 };

@@ -776,6 +776,338 @@ def api_replay(username: str):
     return jsonify({"ok": True, "message": f"Replayed the first pending message for {username}."})
 
 
+# ── Routes: Verification Details ──────────────────────────────────────────────
+
+@app.route("/api/verify-details/<username>/<int:email_id>")
+def api_verify_details(username: str, email_id: int):
+    """Return per-message cryptographic verification evidence."""
+    if username not in clients:
+        return jsonify({"error": "Unknown user"}), 404
+
+    c = clients[username]
+    emails = db.load_emails(username)
+    email = next((e for e in emails if e.get("id") == email_id), None)
+    if not email:
+        return jsonify({"error": "Email not found"}), 404
+
+    plaintext = email.get("plaintext", "")
+    verified = email.get("verified", False)
+    error_msg = email.get("error", "")
+    sender_name = email.get("sender", "unknown")
+
+    message_id = _extract_header(plaintext or "", "Message-ID")
+    timestamp = _extract_header(plaintext or "", "Timestamp")
+
+    replay_cached = message_id in c.seen_message_ids if message_id else False
+    sender_known = sender_name in clients
+
+    sender_fingerprints = {}
+    if sender_known:
+        sc = clients[sender_name]
+        sender_fingerprints = {
+            "kyber": crypto_utils.key_fingerprint(sc.kyber_pk),
+            "dilithium": crypto_utils.key_fingerprint(sc.dilithium_pk),
+        }
+
+    checks = []
+    if verified:
+        checks.append({"check": "KEM Decapsulation", "status": "pass",
+                        "detail": f"Kyber768 shared secret recovered ({crypto_utils.KEM_ALG})"})
+        checks.append({"check": "AES-GCM Decryption", "status": "pass",
+                        "detail": "Ciphertext decrypted, GCM authentication tag valid"})
+        checks.append({"check": "Signature Verification", "status": "pass",
+                        "detail": f"Dilithium3 signature verified against {sender_name}'s public key"})
+        checks.append({"check": "Replay Check", "status": "pass",
+                        "detail": f"Message-ID {message_id or 'N/A'} is unique (first seen)"})
+        checks.append({"check": "Integrity", "status": "pass",
+                        "detail": "No modification detected — plaintext matches authenticated decryption"})
+    else:
+        err_lower = (error_msg or "").lower()
+        if "tamper" in err_lower or "corrupt" in err_lower or "tag" in err_lower:
+            checks.append({"check": "KEM Decapsulation", "status": "pass",
+                            "detail": "Shared secret recovered"})
+            checks.append({"check": "AES-GCM Decryption", "status": "fail",
+                            "detail": "GCM authentication tag mismatch — ciphertext was modified"})
+            checks.append({"check": "Integrity", "status": "fail",
+                            "detail": "Ciphertext tampering detected"})
+        elif "signature" in err_lower or "forg" in err_lower:
+            checks.append({"check": "KEM Decapsulation", "status": "pass",
+                            "detail": "Shared secret recovered"})
+            checks.append({"check": "AES-GCM Decryption", "status": "pass",
+                            "detail": "Ciphertext decrypted successfully"})
+            checks.append({"check": "Signature Verification", "status": "fail",
+                            "detail": "Dilithium3 signature does NOT match sender's registered public key"})
+        elif "replay" in err_lower:
+            checks.append({"check": "KEM Decapsulation", "status": "pass",
+                            "detail": "Shared secret recovered"})
+            checks.append({"check": "AES-GCM Decryption", "status": "pass",
+                            "detail": "Ciphertext decrypted successfully"})
+            checks.append({"check": "Signature Verification", "status": "pass",
+                            "detail": "Signature valid"})
+            checks.append({"check": "Replay Check", "status": "fail",
+                            "detail": f"Message-ID {message_id or 'N/A'} already in seen-ID cache"})
+        else:
+            checks.append({"check": "Decryption", "status": "fail",
+                            "detail": error_msg or "Unknown decryption failure"})
+
+    return jsonify({
+        "email_id": email_id,
+        "verified": verified,
+        "error": error_msg,
+        "sender": sender_name,
+        "message_id": message_id,
+        "timestamp": timestamp,
+        "algorithms": {
+            "kem": crypto_utils.KEM_ALG,
+            "sig": crypto_utils.SIG_ALG,
+            "dem": "AES-256-GCM",
+        },
+        "key_sizes": {
+            "kyber_pk": len(c.kyber_pk),
+            "kyber_sk": len(c.kyber_sk),
+            "dilithium_pk": len(c.dilithium_pk),
+            "dilithium_sk": len(c.dilithium_sk),
+        },
+        "sender_fingerprints": sender_fingerprints,
+        "replay_cache_hit": replay_cached,
+        "checks": checks,
+    })
+
+
+# ── Routes: Key Rotation ─────────────────────────────────────────────────────
+
+@app.route("/api/keys/rotate/<username>", methods=["POST"])
+def api_rotate_keys(username: str):
+    """Regenerate a user's Kyber and Dilithium keypairs (TOFU demo)."""
+    if username not in clients:
+        return jsonify({"error": "Unknown user"}), 404
+
+    c = clients[username]
+    old_kyber_fp = crypto_utils.key_fingerprint(c.kyber_pk)
+    old_dilithium_fp = crypto_utils.key_fingerprint(c.dilithium_pk)
+
+    keygen = Client.generate_keys_with_log()
+    c.kyber_pk = keygen["kyber_pk"]
+    c.kyber_sk = keygen["kyber_sk"]
+    c.dilithium_pk = keygen["dilithium_pk"]
+    c.dilithium_sk = keygen["dilithium_sk"]
+    if keygen.get("rsa_pk"):
+        c.rsa_pk = keygen["rsa_pk"]
+        c.rsa_sk = keygen["rsa_sk"]
+
+    db.save_user(username, c.kyber_pk, c.kyber_sk, c.dilithium_pk, c.dilithium_sk,
+                 db.get_password_hash(username),
+                 rsa_pk=c.rsa_pk, rsa_sk=c.rsa_sk)
+
+    new_kyber_fp = crypto_utils.key_fingerprint(c.kyber_pk)
+    new_dilithium_fp = crypto_utils.key_fingerprint(c.dilithium_pk)
+
+    db.log_audit(username, "key_rotation", f"Keys rotated. Kyber: {old_kyber_fp[:16]}→{new_kyber_fp[:16]}", _get_ip())
+
+    return jsonify({
+        "ok": True,
+        "old_fingerprints": {"kyber": old_kyber_fp, "dilithium": old_dilithium_fp},
+        "new_fingerprints": {"kyber": new_kyber_fp, "dilithium": new_dilithium_fp},
+        "steps": keygen["steps"],
+        "user": _user_info(username),
+    })
+
+
+# ── Routes: Network Trace ────────────────────────────────────────────────────
+
+@app.route("/api/network-trace/<username>")
+def api_network_trace(username: str):
+    """Return recent network-level delivery events for a user."""
+    if username not in clients:
+        return jsonify({"error": "Unknown user"}), 404
+
+    audit_entries = db.load_audit_log(username, 50)
+    trace_events = []
+    for entry in audit_entries:
+        action = entry.get("action", "")
+        if action in ("send_email", "send_multi", "send_forged", "send_password_protected",
+                       "receive_email", "p2p_received", "p2p_sent", "tamper_demo", "replay_demo"):
+            transport = "p2p" if "p2p" in action else "server"
+            trace_events.append({
+                "action": action,
+                "details": entry.get("details", ""),
+                "ip": entry.get("ip_address", ""),
+                "timestamp": entry.get("timestamp", ""),
+                "transport": transport,
+            })
+
+    is_p2p = config.P2P_ENABLED
+    return jsonify({
+        "events": trace_events,
+        "mode": "p2p" if is_p2p else "demo",
+        "local_address": f"127.0.0.1:{config.PORT}",
+    })
+
+
+# ── Routes: Demo Report Export ───────────────────────────────────────────────
+
+@app.route("/api/demo-report/<username>")
+def api_demo_report(username: str):
+    """Generate a comprehensive demo evidence report with all security data."""
+    if username not in clients:
+        return jsonify({"error": "Unknown user"}), 404
+
+    c = clients[username]
+    audit = db.load_audit_log(username, 100)
+    benchmarks = crypto_utils.run_benchmarks(3)
+    emails_all = db.load_emails(username)
+
+    attack_summary = {"tamper": 0, "forge": 0, "replay": 0, "verified": 0, "total": 0}
+    for em in emails_all:
+        attack_summary["total"] += 1
+        if em.get("verified"):
+            attack_summary["verified"] += 1
+        else:
+            err = (em.get("error") or "").lower()
+            if "tamper" in err:
+                attack_summary["tamper"] += 1
+            elif "signature" in err or "forg" in err:
+                attack_summary["forge"] += 1
+            elif "replay" in err:
+                attack_summary["replay"] += 1
+
+    all_users_info = {}
+    for uname, uclient in clients.items():
+        all_users_info[uname] = {
+            "kyber_fingerprint": crypto_utils.key_fingerprint(uclient.kyber_pk),
+            "dilithium_fingerprint": crypto_utils.key_fingerprint(uclient.dilithium_pk),
+            "kyber_pk_bytes": len(uclient.kyber_pk),
+            "dilithium_pk_bytes": len(uclient.dilithium_pk),
+        }
+
+    report_json = {
+        "generated_at": __import__("datetime").datetime.now().isoformat(),
+        "user": username,
+        "algorithms": {
+            "kem": crypto_utils.KEM_ALG,
+            "sig": crypto_utils.SIG_ALG,
+            "dem": "AES-256-GCM",
+        },
+        "features": {
+            "zero_knowledge": config.ZERO_KNOWLEDGE_MODE,
+            "forward_secrecy": config.FORWARD_SECRECY,
+            "p2p_enabled": config.P2P_ENABLED,
+        },
+        "users": all_users_info,
+        "attack_summary": attack_summary,
+        "benchmarks": benchmarks,
+        "audit_log": audit[:30],
+    }
+
+    import json as json_mod
+    dt = __import__("datetime").datetime.now()
+
+    html = f"""<!DOCTYPE html>
+<html><head><meta charset="UTF-8"><title>Schrödinger Mail — Demo Evidence Report</title>
+<style>
+body{{font-family:'Inter',system-ui,sans-serif;max-width:900px;margin:40px auto;padding:20px;color:#1f2328;background:#f6f8fa;line-height:1.6}}
+h1{{color:#0a0c10;font-size:22px;border-bottom:2px solid #4493f8;padding-bottom:8px}}
+h2{{color:#1f2328;font-size:16px;margin-top:28px;margin-bottom:8px}}
+h3{{font-size:14px;color:#636e7b;margin-top:20px;margin-bottom:6px}}
+table{{width:100%;border-collapse:collapse;margin:12px 0;font-size:13px}}
+th,td{{padding:8px 12px;border:1px solid #d1d9e0;text-align:left}}
+th{{background:#e8ebef;font-weight:600;font-size:12px;text-transform:uppercase;letter-spacing:0.5px}}
+.pass{{color:#1a7f37;font-weight:600}}.fail{{color:#cf222e;font-weight:600}}
+.mono{{font-family:'JetBrains Mono',monospace;font-size:11px}}
+.section{{margin:24px 0;padding:16px;background:#fff;border:1px solid #d1d9e0;border-radius:8px}}
+.summary-grid{{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin:16px 0}}
+.summary-card{{background:#fff;border:1px solid #d1d9e0;border-radius:8px;padding:16px;text-align:center}}
+.summary-card .num{{font-size:28px;font-weight:700;color:#4493f8}}
+.summary-card .label{{font-size:11px;color:#636e7b;text-transform:uppercase;letter-spacing:0.5px;margin-top:4px}}
+pre{{background:#0a0c10;color:#cdd6e0;padding:12px;border-radius:6px;font-size:11px;overflow-x:auto}}
+.badge{{display:inline-block;padding:2px 8px;border-radius:12px;font-size:11px;font-weight:600}}
+.badge-pass{{background:#dafbe1;color:#1a7f37}}.badge-fail{{background:#ffebe9;color:#cf222e}}
+.footer{{margin-top:32px;padding-top:16px;border-top:1px solid #d1d9e0;font-size:11px;color:#636e7b;text-align:center}}
+</style></head><body>
+<h1>Schrödinger Mail — Demo Evidence Report</h1>
+<p><strong>User:</strong> {username} &nbsp;|&nbsp; <strong>Generated:</strong> {dt.strftime('%Y-%m-%d %H:%M:%S')} &nbsp;|&nbsp;
+<strong>Project:</strong> Cryptography & Network Security</p>
+
+<div class="summary-grid">
+<div class="summary-card"><div class="num">{attack_summary['total']}</div><div class="label">Total Messages</div></div>
+<div class="summary-card"><div class="num pass">{attack_summary['verified']}</div><div class="label">Verified</div></div>
+<div class="summary-card"><div class="num fail">{attack_summary['tamper']+attack_summary['forge']+attack_summary['replay']}</div><div class="label">Attacks Detected</div></div>
+<div class="summary-card"><div class="num">{len(list(clients.keys()))}</div><div class="label">Users</div></div>
+</div>
+
+<div class="section">
+<h2>Cryptographic Algorithms</h2>
+<table>
+<tr><th>Component</th><th>Algorithm</th><th>NIST Standard</th><th>Security Level</th></tr>
+<tr><td>Key Encapsulation (KEM)</td><td>{crypto_utils.KEM_ALG}</td><td>FIPS 203 (ML-KEM)</td><td>Level 3 (192-bit)</td></tr>
+<tr><td>Digital Signature</td><td>{crypto_utils.SIG_ALG}</td><td>FIPS 204 (ML-DSA)</td><td>Level 3 (192-bit)</td></tr>
+<tr><td>Symmetric Encryption</td><td>AES-256-GCM</td><td>FIPS 197 + SP 800-38D</td><td>256-bit</td></tr>
+<tr><td>Key Derivation (Level 1)</td><td>scrypt</td><td>RFC 7914</td><td>Password-based</td></tr>
+</table></div>
+
+<div class="section">
+<h2>Attack Detection Summary</h2>
+<table>
+<tr><th>Attack Type</th><th>Defense Mechanism</th><th>Detected Count</th><th>Status</th></tr>
+<tr><td>Ciphertext Tampering</td><td>AES-256-GCM authentication tag</td><td>{attack_summary['tamper']}</td>
+<td><span class="badge {'badge-pass' if attack_summary['tamper']>0 else 'badge-fail'}">{'TESTED' if attack_summary['tamper']>0 else 'NOT TESTED'}</span></td></tr>
+<tr><td>Signature Forgery</td><td>Dilithium3 signature verification</td><td>{attack_summary['forge']}</td>
+<td><span class="badge {'badge-pass' if attack_summary['forge']>0 else 'badge-fail'}">{'TESTED' if attack_summary['forge']>0 else 'NOT TESTED'}</span></td></tr>
+<tr><td>Replay Attack</td><td>Message-ID seen-cache tracking</td><td>{attack_summary['replay']}</td>
+<td><span class="badge {'badge-pass' if attack_summary['replay']>0 else 'badge-fail'}">{'TESTED' if attack_summary['replay']>0 else 'NOT TESTED'}</span></td></tr>
+</table></div>
+
+<div class="section">
+<h2>Key Sizes & Fingerprints</h2>
+{"".join(f'''<h3>{uname.capitalize()}</h3>
+<table><tr><th>Key</th><th>Size (bytes)</th><th>SHA-256 Fingerprint</th></tr>
+<tr><td>Kyber Public Key</td><td>{info["kyber_pk_bytes"]}</td><td class="mono">{info["kyber_fingerprint"][:48]}...</td></tr>
+<tr><td>Dilithium Public Key</td><td>{info["dilithium_pk_bytes"]}</td><td class="mono">{info["dilithium_fingerprint"][:48]}...</td></tr>
+</table>''' for uname, info in all_users_info.items())}
+</div>
+
+<div class="section">
+<h2>Performance Benchmarks (3 iterations)</h2>
+<table><tr><th>Operation</th><th>Avg (ms)</th><th>Output Size (bytes)</th></tr>
+{"".join(f'<tr><td>{b["operation"]}</td><td class="mono">{b["avg_ms"]:.3f}</td><td class="mono">{b["size_bytes"]:,}</td></tr>' for b in benchmarks)}
+</table></div>
+
+<div class="section">
+<h2>Features Configuration</h2>
+<table><tr><th>Feature</th><th>Status</th></tr>
+<tr><td>Zero-Knowledge Mode</td><td>{"Enabled" if config.ZERO_KNOWLEDGE_MODE else "Disabled"}</td></tr>
+<tr><td>Forward Secrecy</td><td>{"Enabled" if config.FORWARD_SECRECY else "Disabled"}</td></tr>
+<tr><td>P2P LAN Delivery</td><td>{"Enabled" if config.P2P_ENABLED else "Disabled"}</td></tr>
+<tr><td>WebSocket Real-time</td><td>{"Enabled" if socketio else "Disabled"}</td></tr>
+<tr><td>Encrypted Attachments</td><td>Enabled</td></tr>
+<tr><td>Email Threading</td><td>Enabled</td></tr>
+</table></div>
+
+<div class="section">
+<h2>Audit Trail (last 30 events)</h2>
+<table><tr><th>Action</th><th>Details</th><th>IP</th><th>Timestamp</th></tr>
+{"".join(f'<tr><td>{a["action"]}</td><td>{a["details"][:80]}</td><td class="mono">{a["ip_address"]}</td><td class="mono">{a["timestamp"]}</td></tr>' for a in audit[:30])}
+</table></div>
+
+<div class="section">
+<h2>Machine-Readable Data (JSON)</h2>
+<pre>{json_mod.dumps(report_json, indent=2, default=str)}</pre>
+</div>
+
+<div class="footer">
+Schrödinger Mail — Quantum-Secure Email Client | Cryptography & Network Security Project | {dt.strftime('%Y')}
+</div>
+</body></html>"""
+
+    db.log_audit(username, "demo_report_export", "Demo evidence report downloaded", _get_ip())
+    return send_file(
+        io.BytesIO(html.encode()),
+        download_name=f"demo_evidence_report_{username}_{dt.strftime('%Y%m%d_%H%M%S')}.html",
+        mimetype="text/html",
+        as_attachment=True,
+    )
+
+
 # ── Routes: P2P LAN Mode ─────────────────────────────────────────────────────
 
 

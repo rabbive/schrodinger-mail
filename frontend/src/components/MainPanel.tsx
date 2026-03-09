@@ -8,11 +8,17 @@ import AuditPanel from "./AuditPanel";
 import SettingsPanel from "./SettingsPanel";
 import ArchitecturePanel from "./ArchitecturePanel";
 import P2PPanel from "./P2PPanel";
+import DemoStoryline from "./DemoStoryline";
+import AttackLab from "./AttackLab";
+import TofuPanel from "./TofuPanel";
 
 type Tab =
+  | "demo-guide"
+  | "attack-lab"
   | "compose"
   | "read"
   | "network"
+  | "tofu"
   | "keys"
   | "benchmarks"
   | "audit"
@@ -20,9 +26,12 @@ type Tab =
   | "architecture";
 
 const TABS: { id: Tab; label: string }[] = [
+  { id: "demo-guide", label: "Demo Guide" },
+  { id: "attack-lab", label: "Attack Lab" },
   { id: "compose", label: "Compose" },
   { id: "read", label: "Read" },
   { id: "network", label: "Network" },
+  { id: "tofu", label: "Trust (TOFU)" },
   { id: "keys", label: "Keys" },
   { id: "benchmarks", label: "Benchmarks" },
   { id: "audit", label: "Audit Log" },
@@ -38,7 +47,7 @@ const VALID_TABS = new Set(TABS.map((t) => t.id));
 
 export default function MainPanel({ showNotification }: Props) {
   const { activeTab: rawTab, setActiveTab } = useStore();
-  const activeTab: Tab = VALID_TABS.has(rawTab as Tab) ? (rawTab as Tab) : "compose";
+  const activeTab: Tab = VALID_TABS.has(rawTab as Tab) ? (rawTab as Tab) : "demo-guide";
 
   return (
     <main className="overflow-hidden flex flex-col bg-[var(--bg)]">
@@ -53,6 +62,9 @@ export default function MainPanel({ showNotification }: Props) {
               activeTab === tab.id
                 ? "text-[var(--text)] border-b-accent bg-[var(--bg)]"
                 : "text-[var(--text-muted)] border-b-transparent hover:text-[var(--text-dim)] hover:bg-[var(--surface2)]",
+              (tab.id === "demo-guide" || tab.id === "attack-lab") &&
+                activeTab !== tab.id &&
+                "text-accent/60",
             )}
           >
             {tab.label}
@@ -62,9 +74,12 @@ export default function MainPanel({ showNotification }: Props) {
 
       {/* Tab content */}
       <div className="flex-1 overflow-y-auto p-5 scrollbar-thin">
+        {activeTab === "demo-guide" && <DemoStoryline />}
+        {activeTab === "attack-lab" && <AttackLab />}
         {activeTab === "compose" && <ComposeForm showNotification={showNotification} />}
         {activeTab === "read" && <EmailReader />}
         {activeTab === "network" && <P2PPanel />}
+        {activeTab === "tofu" && <TofuPanel />}
         {activeTab === "keys" && <KeysPanel />}
         {activeTab === "benchmarks" && <BenchmarksPanel />}
         {activeTab === "audit" && <AuditPanel />}
