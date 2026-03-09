@@ -308,7 +308,10 @@ def _record_duration(response):
 @app.route("/dashboard")
 def home():
     """Main single-page application (React SPA)."""
-    return send_file("static/index.html")
+    static_path = os.path.join(app.root_path, "static", "index.html")
+    if os.path.exists(static_path):
+        return send_file(static_path)
+    return render_template("home.html")
 
 
 # ── Routes: Auth ─────────────────────────────────────────────────────────────
