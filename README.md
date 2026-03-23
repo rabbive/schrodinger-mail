@@ -1,6 +1,15 @@
 # Schrödinger Mail
 
-A full-featured, quantum-secure email client that uses **post-quantum cryptography** to provide confidentiality, integrity, and authenticity against both classical and quantum computing threats. Built with a **Signed KEM-DEM** architecture using NIST-standardized algorithms.
+A production-oriented, quantum-secure email platform that demonstrates how to build modern encrypted messaging with **NIST-standardized post-quantum cryptography**. Schrödinger Mail combines a Flask backend and React frontend with a **Signed KEM-DEM** pipeline to deliver confidentiality, integrity, and authenticity against both classical and quantum-era threats.
+
+**GitHub repo bio (copy/paste):**  
+Schrödinger Mail is a post-quantum secure email platform built with Kyber, Dilithium, and AES-GCM, featuring signed KEM-DEM encryption, modern web UX, and production-ready deployment assets.
+
+## Why this repository exists
+
+This project is designed as both:
+- an **applied security engineering prototype** for post-quantum communication systems, and
+- an **educational reference implementation** for teams transitioning from classical public-key cryptography to PQC-safe workflows.
 
 > Developed for the Smart India Hackathon (SIH) — Blockchain & Cybersecurity track.
 
@@ -269,6 +278,7 @@ This project implements both at **NIST Security Level 3** (equivalent to AES-192
 ## Security Considerations
 
 See [SECURITY.md](SECURITY.md) for the full threat model and security analysis.
+For private vulnerability reporting, see [SECURITY_CONTACT.md](SECURITY_CONTACT.md).
 
 **Key points:**
 - This is a **university project/prototype** — not production-hardened
@@ -289,3 +299,9 @@ See [SECURITY.md](SECURITY.md) for the full threat model and security analysis.
 ## License
 
 MIT License. See [LICENSE](LICENSE) for details.
+
+---
+
+## Contributing
+
+Contributions are welcome. Please read [CONTRIBUTING.md](CONTRIBUTING.md) for setup, standards, and PR expectations.
