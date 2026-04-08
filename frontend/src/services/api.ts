@@ -50,7 +50,7 @@ export const api = {
     ),
   logout: () => post<{ ok: boolean }>("/api/auth/logout"),
   register: (username: string, password?: string) =>
-    post<{ ok: boolean; user: unknown; steps: CryptoStep[] }>(
+    post<{ ok: boolean; user: unknown; steps: CryptoStep[]; access_token: string; refresh_token: string }>(
       "/api/register",
       { username, password },
     ),

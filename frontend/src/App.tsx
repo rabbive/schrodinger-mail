@@ -7,6 +7,7 @@ import Sidebar from "@/components/Sidebar";
 import MainPanel from "@/components/MainPanel";
 import CryptoPanel from "@/components/CryptoPanel";
 import Notification from "@/components/Notification";
+import LoginPage from "@/components/LoginPage";
 import { Loader2 } from "lucide-react";
 
 export default function App() {
@@ -15,7 +16,8 @@ export default function App() {
     message: string;
     type: "success" | "error" | "info";
   } | null>(null);
-  const [ready, setReady] = useState(false);
+  // "loading" = init in progress, "login" = needs auth, "ready" = authenticated
+  const [status, setStatus] = useState<"loading" | "login" | "ready">("loading");
   const socketRef = useRef<Socket | null>(null);
   const pollIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
@@ -24,16 +26,39 @@ export default function App() {
   }, [theme]);
 
   useEffect(() => {
+    const token = localStorage.getItem("qec-access-token");
+    if (!token) {
+      // No token at all — skip init, go straight to login
+      setStatus("login");
+      return;
+    }
+
     init()
-      .then(() => setReady(true))
-      .catch((err) => {
+      .then(() => {
+        const { activeUser } = useStore.getState();
+        if (!activeUser) {
+          setStatus("login");
+        } else {
+          setStatus("ready");
+        }
+      })
+      .catch((err: Error) => {
+        if (
+          err.message.includes("401") ||
+          err.message.toLowerCase().includes("authentication") ||
+          err.message.toLowerCase().includes("login_required")
+        ) {
+          setStatus("login");
+          return;
+        }
         console.error("Init failed:", err);
-        setReady(true);
+        setStatus("login");
       });
-  }, [init]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   useEffect(() => {
-    if (!ready) return;
+    if (status !== "ready") return;
 
     const wsEnabled = appState?.features?.websockets ?? false;
 
@@ -73,9 +98,9 @@ export default function App() {
       }
     };
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [ready, activeUser, appState?.features?.websockets]);
+  }, [status, activeUser, appState?.features?.websockets]);
 
-  if (!ready || !appState) {
+  if (status === "loading") {
     return (
       <div className="flex items-center justify-center h-screen bg-background">
         <div className="flex flex-col items-center gap-3">
@@ -84,6 +109,10 @@ export default function App() {
         </div>
       </div>
     );
+  }
+
+  if (status === "login") {
+    return <LoginPage onSuccess={() => setStatus("ready")} />;
   }
 
   return (

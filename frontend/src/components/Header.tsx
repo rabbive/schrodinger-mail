@@ -1,13 +1,11 @@
 import { useStore } from "@/hooks/useStore";
-import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
-import { Sun, Moon, Shield } from "lucide-react";
+import { Sun, Moon, Shield, LogOut } from "lucide-react";
 
 export default function Header() {
-  const { appState, activeUser, setActiveUser, toggleTheme, theme } = useStore();
-  const users = appState ? Object.keys(appState.users) : [];
+  const { appState, activeUser, logout, toggleTheme, theme } = useStore();
 
   return (
     <header className="col-span-full flex items-center gap-3 px-4 h-[48px] border-b bg-card">
@@ -50,20 +48,25 @@ export default function Header() {
 
       <Separator orientation="vertical" className="h-4 mx-0.5" />
 
-      <div className="flex items-center gap-1">
-        {users.map((name) => (
-          <Button
-            key={name}
-            variant={name === activeUser ? "default" : "outline"}
-            size="sm"
-            onClick={() => setActiveUser(name)}
-            className={cn(
-              name === activeUser && "bg-primary/15 text-primary border border-primary/30 hover:bg-primary/25",
-            )}
-          >
-            {name.charAt(0).toUpperCase() + name.slice(1)}
-          </Button>
-        ))}
+      <div className="flex items-center gap-2">
+        <span className="text-xs text-muted-foreground">
+          Signed in as{" "}
+          <span className="font-semibold text-foreground capitalize">
+            {activeUser}
+          </span>
+        </span>
+        <Button
+          variant="outline"
+          size="sm"
+          className="h-7 gap-1.5"
+          onClick={async () => {
+            await logout();
+            window.location.href = "/";
+          }}
+        >
+          <LogOut className="h-3 w-3" />
+          Sign out
+        </Button>
       </div>
     </header>
   );

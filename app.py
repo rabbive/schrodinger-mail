@@ -88,19 +88,7 @@ def _bootstrap() -> None:
             clients[u["username"]] = c
             inboxes[u["username"]] = db.load_emails(u["username"])
     else:
-        # No users in the database yet. In demo mode, create Alice and Bob
-        # so the cryptographic walkthrough works out-of-the-box. When P2P
-        # LAN mode is enabled, we instead wait for explicit registration
-        # so that each node represents a single real user.
-        if config.P2P_ENABLED:
-            logger.info("P2P mode enabled and no users found; waiting for registration.")
-            return
-        for name in ("alice", "bob"):
-            c = Client(name, mail_server)
-            clients[name] = c
-            inboxes[name] = []
-            db.save_user(name, c.kyber_pk, c.kyber_sk, c.dilithium_pk, c.dilithium_sk,
-                         rsa_pk=c.rsa_pk, rsa_sk=c.rsa_sk)
+        logger.info("No users found; waiting for registration.")
     logger.info("Bootstrap complete: %d users loaded", len(clients))
 
 _bootstrap()
@@ -198,6 +186,14 @@ def _require_auth(f):
         return f(*args, **kwargs)
 
     return wrapper
+
+
+def _assert_own_user(username: str):
+    """Return a 403 response if the authenticated user doesn't match username."""
+    current = _current_user()
+    if current and current != username:
+        return jsonify({"error": "Access denied."}), 403
+    return None
 
 
 def _notify_ws(username: str, event: str, data: Any = None) -> None:
@@ -305,9 +301,14 @@ def _record_duration(response):
 
 
 @app.route("/")
-@app.route("/dashboard")
 def home():
-    """Main single-page application (React SPA)."""
+    """Login / register landing page."""
+    return render_template("home.html")
+
+
+@app.route("/dashboard")
+def dashboard():
+    """Main React SPA — requires the user to be logged in."""
     static_path = os.path.join(app.root_path, "static", "index.html")
     if os.path.exists(static_path):
         return send_file(static_path)
@@ -423,6 +424,7 @@ def api_auth_status():
 # ── Routes: State ────────────────────────────────────────────────────────────
 
 @app.route("/api/state")
+@_require_auth
 def api_state():
     return jsonify({
         "kem_algorithm": crypto_utils.KEM_ALG,
@@ -443,18 +445,26 @@ def api_state():
 
 
 @app.route("/api/inbox/<username>")
+@_require_auth
 def api_inbox(username: str):
     if username not in clients:
         return jsonify({"error": f"Unknown user '{username}'"}), 404
+    err = _assert_own_user(username)
+    if err:
+        return err
     return jsonify({"emails": inboxes.get(username, [])})
 
 
 # ── Routes: Folders ──────────────────────────────────────────────────────────
 
 @app.route("/api/folders/<username>")
+@_require_auth
 def api_folders(username: str):
     if username not in clients:
         return jsonify({"error": "Unknown user"}), 404
+    err = _assert_own_user(username)
+    if err:
+        return err
     counts = db.get_folder_counts(username)
     folders = ["inbox", "sent", "drafts", "archive", "trash"]
     result = []
@@ -469,15 +479,23 @@ def api_folders(username: str):
 
 
 @app.route("/api/emails/<username>/<folder>")
+@_require_auth
 def api_emails_by_folder(username: str, folder: str):
     if username not in clients:
         return jsonify({"error": "Unknown user"}), 404
+    err = _assert_own_user(username)
+    if err:
+        return err
     emails = db.load_emails_by_folder(username, folder)
     return jsonify({"emails": emails})
 
 
 @app.route("/api/move/<username>/<int:email_id>", methods=["POST"])
+@_require_auth
 def api_move_email(username: str, email_id: int):
+    err = _assert_own_user(username)
+    if err:
+        return err
     data = request.get_json(force=True)
     folder = data.get("folder", "").strip()
     if folder not in ("inbox", "sent", "archive", "trash"):
@@ -489,21 +507,33 @@ def api_move_email(username: str, email_id: int):
 
 
 @app.route("/api/delete/<username>/<int:email_id>", methods=["POST"])
+@_require_auth
 def api_delete_email(username: str, email_id: int):
+    err = _assert_own_user(username)
+    if err:
+        return err
     db.move_email(email_id, "trash")
     _refresh_inbox(username)
     return jsonify({"ok": True})
 
 
 @app.route("/api/delete-permanent/<username>/<int:email_id>", methods=["DELETE"])
+@_require_auth
 def api_delete_permanent(username: str, email_id: int):
+    err = _assert_own_user(username)
+    if err:
+        return err
     db.delete_email_permanent(email_id)
     _refresh_inbox(username)
     return jsonify({"ok": True})
 
 
 @app.route("/api/empty-trash/<username>", methods=["DELETE"])
+@_require_auth
 def api_empty_trash(username: str):
+    err = _assert_own_user(username)
+    if err:
+        return err
     count = db.empty_trash(username)
     _refresh_inbox(username)
     db.log_audit(username, "empty_trash", f"Permanently deleted {count} emails", _get_ip())
@@ -517,6 +547,7 @@ def _refresh_inbox(username: str) -> None:
 # ── Routes: Send ─────────────────────────────────────────────────────────────
 
 @app.route("/api/send", methods=["POST"])
+@_require_auth
 def api_send():
     data = request.get_json(force=True)
     sender_name = data.get("sender", "").strip().lower()
@@ -531,6 +562,9 @@ def api_send():
 
     if sender_name not in clients:
         return jsonify({"error": f"Unknown sender '{sender_name}'"}), 404
+    err = _assert_own_user(sender_name)
+    if err:
+        return err
     if not subject or not body:
         return jsonify({"error": "Subject and body are required."}), 400
 
@@ -617,6 +651,7 @@ def api_send():
 
 
 @app.route("/api/send-forged", methods=["POST"])
+@_require_auth
 def api_send_forged():
     data = request.get_json(force=True)
     sender_name = data.get("sender", "").strip().lower()
@@ -656,6 +691,7 @@ def api_send_forged():
 
 
 @app.route("/api/send-password", methods=["POST"])
+@_require_auth
 def api_send_password():
     """Send a password-protected message (KDF instead of KEM)."""
     data = request.get_json(force=True)
@@ -667,6 +703,9 @@ def api_send_password():
 
     if sender_name not in clients or recipient_name not in clients:
         return jsonify({"error": "Unknown user"}), 404
+    err = _assert_own_user(sender_name)
+    if err:
+        return err
     if not subject or not body or not password:
         return jsonify({"error": "Subject, body, and password are required."}), 400
 
@@ -688,9 +727,13 @@ def api_send_password():
 # ── Routes: Receive ──────────────────────────────────────────────────────────
 
 @app.route("/api/receive/<username>", methods=["POST"])
+@_require_auth
 def api_receive(username: str):
     if username not in clients:
         return jsonify({"error": f"Unknown user '{username}'"}), 404
+    err = _assert_own_user(username)
+    if err:
+        return err
 
     client = clients[username]
     result = client.receive_emails_with_log()
@@ -754,9 +797,13 @@ def api_thread(thread_id: str):
 # ── Routes: Tamper / Replay ──────────────────────────────────────────────────
 
 @app.route("/api/tamper/<username>", methods=["POST"])
+@_require_auth
 def api_tamper(username: str):
     if username not in clients:
         return jsonify({"error": f"Unknown user '{username}'"}), 404
+    err = _assert_own_user(username)
+    if err:
+        return err
     pending = mail_server.mailboxes.get(username, [])
     if not pending:
         return jsonify({"error": "No pending messages to tamper with."}), 400
@@ -768,9 +815,13 @@ def api_tamper(username: str):
 
 
 @app.route("/api/replay/<username>", methods=["POST"])
+@_require_auth
 def api_replay(username: str):
     if username not in clients:
         return jsonify({"error": f"Unknown user '{username}'"}), 404
+    err = _assert_own_user(username)
+    if err:
+        return err
     pending = mail_server.mailboxes.get(username, [])
     if not pending:
         return jsonify({"error": "No pending messages to replay."}), 400
@@ -782,10 +833,14 @@ def api_replay(username: str):
 # ── Routes: Verification Details ──────────────────────────────────────────────
 
 @app.route("/api/verify-details/<username>/<int:email_id>")
+@_require_auth
 def api_verify_details(username: str, email_id: int):
     """Return per-message cryptographic verification evidence."""
     if username not in clients:
         return jsonify({"error": "Unknown user"}), 404
+    err = _assert_own_user(username)
+    if err:
+        return err
 
     c = clients[username]
     emails = db.load_emails(username)
@@ -880,10 +935,14 @@ def api_verify_details(username: str, email_id: int):
 # ── Routes: Key Rotation ─────────────────────────────────────────────────────
 
 @app.route("/api/keys/rotate/<username>", methods=["POST"])
+@_require_auth
 def api_rotate_keys(username: str):
     """Regenerate a user's Kyber and Dilithium keypairs (TOFU demo)."""
     if username not in clients:
         return jsonify({"error": "Unknown user"}), 404
+    err = _assert_own_user(username)
+    if err:
+        return err
 
     c = clients[username]
     old_kyber_fp = crypto_utils.key_fingerprint(c.kyber_pk)
@@ -919,10 +978,14 @@ def api_rotate_keys(username: str):
 # ── Routes: Network Trace ────────────────────────────────────────────────────
 
 @app.route("/api/network-trace/<username>")
+@_require_auth
 def api_network_trace(username: str):
     """Return recent network-level delivery events for a user."""
     if username not in clients:
         return jsonify({"error": "Unknown user"}), 404
+    err = _assert_own_user(username)
+    if err:
+        return err
 
     audit_entries = db.load_audit_log(username, 50)
     trace_events = []
@@ -950,10 +1013,14 @@ def api_network_trace(username: str):
 # ── Routes: Demo Report Export ───────────────────────────────────────────────
 
 @app.route("/api/demo-report/<username>")
+@_require_auth
 def api_demo_report(username: str):
     """Generate a comprehensive demo evidence report with all security data."""
     if username not in clients:
         return jsonify({"error": "Unknown user"}), 404
+    err = _assert_own_user(username)
+    if err:
+        return err
 
     c = clients[username]
     audit = db.load_audit_log(username, 100)
@@ -1208,16 +1275,24 @@ def api_forward():
 # ── Routes: Drafts ───────────────────────────────────────────────────────────
 
 @app.route("/api/drafts/<username>")
+@_require_auth
 def api_drafts(username: str):
     if username not in clients:
         return jsonify({"error": "Unknown user"}), 404
+    err = _assert_own_user(username)
+    if err:
+        return err
     return jsonify({"drafts": db.load_drafts(username)})
 
 
 @app.route("/api/draft/<username>", methods=["POST"])
+@_require_auth
 def api_save_draft(username: str):
     if username not in clients:
         return jsonify({"error": "Unknown user"}), 404
+    err = _assert_own_user(username)
+    if err:
+        return err
     data = request.get_json(force=True)
     draft_id = db.save_draft(
         owner=username,
@@ -1230,7 +1305,11 @@ def api_save_draft(username: str):
 
 
 @app.route("/api/draft/<username>/<int:draft_id>", methods=["DELETE"])
+@_require_auth
 def api_delete_draft(username: str, draft_id: int):
+    err = _assert_own_user(username)
+    if err:
+        return err
     db.delete_draft(draft_id, username)
     return jsonify({"ok": True})
 
@@ -1238,17 +1317,25 @@ def api_delete_draft(username: str, draft_id: int):
 # ── Routes: Contacts ─────────────────────────────────────────────────────────
 
 @app.route("/api/contacts/<username>")
+@_require_auth
 def api_contacts(username: str):
     if username not in clients:
         return jsonify({"error": "Unknown user"}), 404
+    err = _assert_own_user(username)
+    if err:
+        return err
     contacts = db.load_contacts(username)
     return jsonify({"contacts": contacts})
 
 
 @app.route("/api/contacts/<username>", methods=["POST"])
+@_require_auth
 def api_add_contact(username: str):
     if username not in clients:
         return jsonify({"error": "Unknown user"}), 404
+    err = _assert_own_user(username)
+    if err:
+        return err
     data = request.get_json(force=True)
     name = data.get("name", "").strip()
     target = data.get("username", "").strip().lower()
@@ -1275,7 +1362,11 @@ def api_add_contact(username: str):
 
 
 @app.route("/api/contacts/<username>/<int:contact_id>", methods=["DELETE"])
+@_require_auth
 def api_delete_contact(username: str, contact_id: int):
+    err = _assert_own_user(username)
+    if err:
+        return err
     db.delete_contact(contact_id, username)
     return jsonify({"ok": True})
 
@@ -1333,9 +1424,13 @@ def api_download_attachment(attachment_id: int):
 # ── Routes: Search ───────────────────────────────────────────────────────────
 
 @app.route("/api/search/<username>")
+@_require_auth
 def api_search(username: str):
     if username not in clients:
         return jsonify({"error": f"Unknown user '{username}'"}), 404
+    err = _assert_own_user(username)
+    if err:
+        return err
     q = request.args.get("q", "").strip()
     if not q:
         return jsonify({"emails": inboxes.get(username, [])})
@@ -1346,9 +1441,13 @@ def api_search(username: str):
 # ── Routes: Read ─────────────────────────────────────────────────────────────
 
 @app.route("/api/read/<username>/<int:email_id>", methods=["POST"])
+@_require_auth
 def api_mark_read(username: str, email_id: int):
     if username not in clients:
         return jsonify({"error": f"Unknown user '{username}'"}), 404
+    err = _assert_own_user(username)
+    if err:
+        return err
     db.mark_read(email_id)
     for em in inboxes.get(username, []):
         if em.get("id") == email_id:
@@ -1360,9 +1459,13 @@ def api_mark_read(username: str, email_id: int):
 # ── Routes: Sessions ─────────────────────────────────────────────────────────
 
 @app.route("/api/sessions/<username>")
+@_require_auth
 def api_sessions(username: str):
     if username not in clients:
         return jsonify({"error": "Unknown user"}), 404
+    err = _assert_own_user(username)
+    if err:
+        return err
     return jsonify({"sessions": db.load_sessions(username)})
 
 
@@ -1375,9 +1478,13 @@ def api_revoke_session(session_id: str):
 # ── Routes: Audit Log ────────────────────────────────────────────────────────
 
 @app.route("/api/audit/<username>")
+@_require_auth
 def api_audit(username: str):
     if username not in clients:
         return jsonify({"error": "Unknown user"}), 404
+    err = _assert_own_user(username)
+    if err:
+        return err
     limit = request.args.get("limit", 100, type=int)
     return jsonify({"log": db.load_audit_log(username, limit)})
 
@@ -1385,16 +1492,24 @@ def api_audit(username: str):
 # ── Routes: Settings ─────────────────────────────────────────────────────────
 
 @app.route("/api/settings/<username>")
+@_require_auth
 def api_get_settings(username: str):
     if username not in clients:
         return jsonify({"error": "Unknown user"}), 404
+    err = _assert_own_user(username)
+    if err:
+        return err
     return jsonify({"settings": db.get_settings(username)})
 
 
 @app.route("/api/settings/<username>", methods=["POST"])
+@_require_auth
 def api_save_settings(username: str):
     if username not in clients:
         return jsonify({"error": "Unknown user"}), 404
+    err = _assert_own_user(username)
+    if err:
+        return err
     data = request.get_json(force=True)
     db.save_settings(username, **data)
     return jsonify({"ok": True})
@@ -1403,6 +1518,7 @@ def api_save_settings(username: str):
 # ── Routes: Keys ─────────────────────────────────────────────────────────────
 
 @app.route("/api/keys/<username>")
+@_require_auth
 def api_keys(username: str):
     if username not in clients:
         return jsonify({"error": "Unknown user"}), 404
@@ -1420,6 +1536,7 @@ def api_keys(username: str):
 
 
 @app.route("/api/keys/export/<username>/<key_type>")
+@_require_auth
 def api_export_key(username: str, key_type: str):
     if username not in clients:
         return jsonify({"error": "Unknown user"}), 404
@@ -1434,6 +1551,7 @@ def api_export_key(username: str, key_type: str):
 
 
 @app.route("/api/keys/verify", methods=["POST"])
+@_require_auth
 def api_verify_keys():
     data = request.get_json(force=True)
     user_a = data.get("user_a", "").strip().lower()
@@ -1503,7 +1621,15 @@ def api_register():
     db.log_audit(username, "register", "User registered", _get_ip())
     metrics.inc("auth_register_total")
 
-    return jsonify({"ok": True, "user": _user_info(username), "steps": keygen["steps"]})
+    # Auto-login: create a session and issue tokens so the frontend can
+    # redirect straight to the dashboard without a second login round-trip.
+    session["username"] = username
+    sid = secrets.token_hex(16)
+    session["session_id"] = sid
+    db.save_session(sid, username, _get_ip(), request.user_agent.string)
+    tokens = jwt_auth.create_token_pair(username)
+
+    return jsonify({"ok": True, "user": _user_info(username), "steps": keygen["steps"], **tokens})
 
 
 # ── Routes: Undo Send ────────────────────────────────────────────────────────
@@ -1522,9 +1648,13 @@ def api_undo_send(pending_id: str):
 # ── Routes: Report Export ────────────────────────────────────────────────────
 
 @app.route("/api/report/<username>")
+@_require_auth
 def api_report(username: str):
     if username not in clients:
         return jsonify({"error": "Unknown user"}), 404
+    err = _assert_own_user(username)
+    if err:
+        return err
     c = clients[username]
     audit = db.load_audit_log(username, 50)
     benchmarks = crypto_utils.run_benchmarks(3)
@@ -1625,6 +1755,6 @@ if __name__ == "__main__":
     print(f"  Open http://127.0.0.1:{config.PORT} in your browser.\n")
 
     if socketio:
-        socketio.run(app, debug=config.DEBUG, port=config.PORT, allow_unsafe_werkzeug=True)
+        socketio.run(app, host="0.0.0.0", debug=config.DEBUG, port=config.PORT, allow_unsafe_werkzeug=True)
     else:
-        app.run(debug=config.DEBUG, port=config.PORT)
+        app.run(host="0.0.0.0", debug=config.DEBUG, port=config.PORT)

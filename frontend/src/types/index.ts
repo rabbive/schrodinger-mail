@@ -21,6 +21,7 @@ export interface AppState {
   sig_algorithm: string;
   dem_algorithm: string;
   mode: "demo" | "p2p";
+  local_username: string;
   users: Record<string, UserInfo>;
   features: {
     zero_knowledge: boolean;

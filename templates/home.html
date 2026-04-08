@@ -183,28 +183,30 @@
         border-color: var(--accent);
         box-shadow: 0 0 0 1px rgba(99,102,241,.6);
       }
-      .mode-toggle {
+      .tab-toggle {
         display: flex;
-        gap: 6px;
-        margin-bottom: 12px;
-      }
-      .mode-pill {
-        flex: 1;
-        border-radius: 999px;
-        border: 1px solid var(--border);
+        gap: 4px;
+        margin-bottom: 16px;
         background: rgba(15,23,42,.9);
-        padding: 5px 9px;
-        display: flex;
-        align-items: center;
-        gap: 6px;
-        font-size: 0.74rem;
-        cursor: pointer;
+        border: 1px solid var(--border);
+        border-radius: 999px;
+        padding: 3px;
       }
-      .mode-pill input {
-        accent-color: var(--accent);
-      }
-      .mode-pill span {
+      .tab-btn {
+        flex: 1;
+        border: none;
+        border-radius: 999px;
+        padding: 5px 10px;
+        font-size: 0.78rem;
         font-weight: 600;
+        cursor: pointer;
+        background: transparent;
+        color: var(--text-dim);
+        transition: background 0.15s, color 0.15s;
+      }
+      .tab-btn.active {
+        background: linear-gradient(135deg, #4f46e5, #6366f1);
+        color: white;
       }
       .actions {
         display: flex;
@@ -262,9 +264,9 @@
         <div>
           <div class="hero-title">Quantum-secure email, on your LAN.</div>
           <p class="hero-sub">
-            Run the client on two devices, connect them over your local network,
-            and exchange post-quantum encrypted messages — or explore the full
-            cryptographic demo with Alice and Bob.
+            Run the server on one device, share the link with a friend on the
+            same network, and exchange post-quantum encrypted messages — every
+            message signed and encrypted end-to-end.
           </p>
         </div>
         <div class="hero-grid">
@@ -291,84 +293,96 @@
         </div>
       </div>
       <div class="panel">
-        <div class="panel-title">Sign in to continue</div>
-        <div class="panel-sub">
-          Log in with a local user for real P2P messaging, or jump straight into
-          the interactive Alice/Bob demo.
+        <div class="panel-title">Welcome to Schrödinger Mail</div>
+        <div class="panel-sub">Sign in to your account or create a new one.</div>
+
+        <div class="tab-toggle">
+          <button type="button" class="tab-btn active" id="tab-login" onclick="setMode('login')">Sign in</button>
+          <button type="button" class="tab-btn" id="tab-register" onclick="setMode('register')">Create account</button>
         </div>
-        <form id="login-form">
+
+        <form id="auth-form">
           <div class="field-group">
             <div class="field-label">Username</div>
-            <input class="field-input" type="text" name="username" id="username" placeholder="alice" required>
+            <input class="field-input" type="text" id="username" placeholder="your username" autocomplete="username" required>
           </div>
           <div class="field-group">
             <div class="field-label">Password</div>
-            <input class="field-input" type="password" name="password" id="password" placeholder="••••••">
+            <input class="field-input" type="password" id="password" placeholder="••••••" autocomplete="current-password">
           </div>
-          <div class="field-group">
-            <div class="field-label">Mode</div>
-            <div class="mode-toggle">
-              <label class="mode-pill">
-                <input type="radio" name="mode" value="demo" checked>
-                <span>Demo mode</span>
-              </label>
-              <label class="mode-pill">
-                <input type="radio" name="mode" value="p2p">
-                <span>P2P LAN</span>
-              </label>
-            </div>
+          <div class="field-group" id="confirm-group" style="display:none;">
+            <div class="field-label">Confirm password</div>
+            <input class="field-input" type="password" id="password2" placeholder="••••••" autocomplete="new-password">
           </div>
           <div class="actions">
-            <button type="submit" class="btn-primary">Continue</button>
-            <button type="button" id="demo-btn" class="btn-secondary">Run Crypto Demo</button>
-          </div>
-          <div class="hint">
-            Tip: the demo ships with <code>alice</code> and <code>bob</code> pre-configured.
+            <button type="submit" class="btn-primary" id="submit-btn">Sign In</button>
           </div>
           <div id="error" class="error" style="display:none;"></div>
         </form>
       </div>
     </div>
     <script>
-      const form = document.getElementById('login-form');
+      let currentMode = 'login';
       const errorEl = document.getElementById('error');
-      const demoBtn = document.getElementById('demo-btn');
 
-      async function login(username, password) {
-        try {
-          const res = await fetch('/api/auth/login', {
-            method: 'POST',
-            headers: {'Content-Type': 'application/json'},
-            body: JSON.stringify({ username, password })
-          });
-          const data = await res.json();
-          if (!res.ok || !data.ok) {
-            throw new Error(data.error || 'Login failed');
-          }
-          // Use session cookie / JWT as configured; SPA will fetch /api/state.
-          window.location.href = '/dashboard';
-        } catch (err) {
-          errorEl.textContent = err.message || 'Login failed';
-          errorEl.style.display = 'block';
-        }
+      function setMode(mode) {
+        currentMode = mode;
+        document.getElementById('confirm-group').style.display = mode === 'register' ? 'block' : 'none';
+        document.getElementById('submit-btn').textContent = mode === 'register' ? 'Create Account' : 'Sign In';
+        document.getElementById('tab-login').classList.toggle('active', mode === 'login');
+        document.getElementById('tab-register').classList.toggle('active', mode === 'register');
+        errorEl.style.display = 'none';
       }
 
-      form.addEventListener('submit', (e) => {
+      function storeTokens(data) {
+        if (data.access_token) localStorage.setItem('qec-access-token', data.access_token);
+        if (data.refresh_token) localStorage.setItem('qec-refresh-token', data.refresh_token);
+      }
+
+      document.getElementById('auth-form').addEventListener('submit', async (e) => {
         e.preventDefault();
         errorEl.style.display = 'none';
-        const username = document.getElementById('username').value.trim();
+
+        const username = document.getElementById('username').value.trim().toLowerCase();
         const password = document.getElementById('password').value;
+
         if (!username) {
           errorEl.textContent = 'Please enter a username.';
           errorEl.style.display = 'block';
           return;
         }
-        login(username, password);
-      });
 
-      demoBtn.addEventListener('click', () => {
-        // Demo mode: go straight to the dashboard which will boot with Alice/Bob.
-        window.location.href = '/dashboard';
+        try {
+          if (currentMode === 'register') {
+            const password2 = document.getElementById('password2').value;
+            if (password !== password2) {
+              errorEl.textContent = 'Passwords do not match.';
+              errorEl.style.display = 'block';
+              return;
+            }
+            const res = await fetch('/api/register', {
+              method: 'POST',
+              headers: {'Content-Type': 'application/json'},
+              body: JSON.stringify({ username, password })
+            });
+            const data = await res.json();
+            if (!res.ok || !data.ok) throw new Error(data.error || 'Registration failed');
+            storeTokens(data);
+          } else {
+            const res = await fetch('/api/auth/login', {
+              method: 'POST',
+              headers: {'Content-Type': 'application/json'},
+              body: JSON.stringify({ username, password })
+            });
+            const data = await res.json();
+            if (!res.ok || !data.ok) throw new Error(data.error || 'Login failed');
+            storeTokens(data);
+          }
+          window.location.href = '/dashboard';
+        } catch (err) {
+          errorEl.textContent = err.message || 'Something went wrong.';
+          errorEl.style.display = 'block';
+        }
       });
     </script>
   </body>

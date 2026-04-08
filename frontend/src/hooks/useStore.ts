@@ -63,7 +63,10 @@ export const useStore = create<Store>((set, get) => ({
     const token = get().accessToken;
     if (token) setAccessToken(token);
     const state = await api.getState();
-    const activeUser = Object.keys(state.users)[0] || "alice";
+    const activeUser =
+      (state.local_username as string) ||
+      Object.keys(state.users)[0] ||
+      "";
     set({ appState: state, activeUser });
     await get().loadFolders();
     await get().loadEmails();
