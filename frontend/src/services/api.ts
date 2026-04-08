@@ -223,4 +223,25 @@ export const api = {
 
   // Demo report
   getDemoReportUrl: (username: string) => `/api/demo-report/${username}`,
+
+  // Attack Lab — full server-side attack flows
+  runAttack: (data: {
+    attack_type: "tamper" | "forge" | "replay" | "wrong-password";
+    sender: string;
+    recipient: string;
+  }) =>
+    post<{
+      ok: boolean;
+      steps: CryptoStep[];
+      results: Email[];
+      detected: boolean;
+      explanation: {
+        attack_name: string;
+        detected: boolean;
+        security_property: string;
+        defense_mechanism: string;
+        how_it_works: string;
+        real_world: string;
+      };
+    }>("/api/attack-lab/run", data),
 };

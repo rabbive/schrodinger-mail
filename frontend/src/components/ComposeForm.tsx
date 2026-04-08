@@ -54,7 +54,7 @@ export default function ComposeForm({ showNotification }: Props) {
   const [recipient, setRecipient] = useState("");
   const [subject, setSubject] = useState("");
   const [body, setBody] = useState("");
-  const [securityLevel, setSecurityLevel] = useState(1);
+  const [securityLevel, setSecurityLevel] = useState(2);
   const [encryptSubject, setEncryptSubject] = useState(false);
   const [password, setPassword] = useState("");
   const [sending, setSending] = useState(false);
