@@ -1645,6 +1645,387 @@ def api_undo_send(pending_id: str):
     return jsonify({"error": "Undo window expired or invalid ID."}), 400
 
 
+# ── Routes: Attack Lab (full server-side flows) ─────────────────────────────
+
+@app.route("/api/attack-lab/run", methods=["POST"])
+@_require_auth
+def api_attack_lab_run():
+    """
+    Execute a full attack scenario server-side.
+
+    This endpoint handles the complete send → attack → receive flow
+    internally so that the logged-in user can demonstrate attacks
+    involving any two registered users without per-user auth conflicts.
+    """
+    data = request.get_json(force=True)
+    attack_type = data.get("attack_type", "")
+    sender_name = data.get("sender", "").strip().lower()
+    recipient_name = data.get("recipient", "").strip().lower()
+
+    if sender_name not in clients:
+        return jsonify({"error": f"Unknown sender '{sender_name}'"}), 404
+    if recipient_name not in clients:
+        return jsonify({"error": f"Unknown recipient '{recipient_name}'"}), 404
+    if sender_name == recipient_name:
+        return jsonify({"error": "Sender and recipient must be different users."}), 400
+
+    if attack_type == "tamper":
+        return _attack_tamper(sender_name, recipient_name)
+    elif attack_type == "forge":
+        return _attack_forge(sender_name, recipient_name)
+    elif attack_type == "replay":
+        return _attack_replay(sender_name, recipient_name)
+    elif attack_type == "wrong-password":
+        return _attack_wrong_password(sender_name, recipient_name)
+    else:
+        return jsonify({"error": f"Unknown attack type '{attack_type}'"}), 400
+
+
+def _attack_tamper(sender_name: str, recipient_name: str):
+    """Tamper attack: send → flip ciphertext byte → receive."""
+    all_steps = []
+    sender = clients[sender_name]
+    recipient_client = clients[recipient_name]
+
+    # Step: Send a legitimate message
+    result = sender.send_email_with_log(
+        recipient_name, "[Attack Lab] Tamper Test",
+        "This message will be tampered with after encryption.",
+    )
+    all_steps.extend(result["steps"])
+
+    # Step: Tamper with the ciphertext in the mailbox
+    pending = mail_server.mailboxes.get(recipient_name, [])
+    if not pending:
+        return jsonify({"error": "No pending messages to tamper with."}), 400
+    original_ct = bytearray(pending[-1]["ciphertext"])
+    original_ct[0] ^= 0xFF
+    pending[-1]["ciphertext"] = bytes(original_ct)
+
+    all_steps.append({
+        "step": len(all_steps) + 1,
+        "title": "ATTACK: Ciphertext Tampered (Man-in-the-Middle)",
+        "description": "Flipped byte 0 of ciphertext (XOR 0xFF) — simulating a network-level attacker modifying the encrypted data in transit.",
+        "details": {
+            "attack_vector": "Man-in-the-Middle (MitM)",
+            "modification": "XOR 0xFF on ciphertext[0]",
+            "target_field": "AES-256-GCM ciphertext",
+            "explanation": "Even a single bit change will cause the GCM authentication tag to fail, proving the integrity guarantee.",
+        },
+        "status": "error",
+    })
+
+    # Step: Receive as recipient — should detect tampering
+    recv_result = recipient_client.receive_emails_with_log()
+    all_steps.extend(recv_result["steps"])
+
+    # Save emails for the recipient
+    for r in recv_result["results"]:
+        r["read"] = False
+        subj = _extract_subject(r.get("plaintext"))
+        thread_id = _extract_header(r.get("plaintext", ""), "Thread-ID")
+        in_reply_to = _extract_header(r.get("plaintext", ""), "In-Reply-To")
+        email_id = db.save_email(
+            recipient=recipient_name, sender=r.get("sender", "unknown"),
+            plaintext=r.get("plaintext"), verified=r.get("verified", False),
+            error=r.get("error"), subject=subj,
+            thread_id=thread_id, in_reply_to=in_reply_to,
+        )
+        r["id"] = email_id
+        inboxes.setdefault(recipient_name, []).append(r)
+
+    for mid in recipient_client.seen_message_ids:
+        db.save_seen_id(recipient_name, mid)
+    db.delete_pending(recipient_name)
+
+    tampered = any(
+        not r.get("verified") and "tamper" in (r.get("error") or "").lower()
+        for r in recv_result["results"]
+    )
+
+    db.log_audit(sender_name, "attack_lab_tamper",
+                 f"Tamper attack demo: {sender_name} → {recipient_name}", _get_ip())
+
+    # Build explanation
+    explanation = {
+        "attack_name": "Ciphertext Tampering (Man-in-the-Middle)",
+        "detected": tampered,
+        "security_property": "Integrity",
+        "defense_mechanism": "AES-256-GCM Authentication Tag",
+        "how_it_works": (
+            "AES-GCM produces a 128-bit authentication tag during encryption that acts as a cryptographic checksum. "
+            "When even a single bit of the ciphertext is modified, the GCM tag verification fails during decryption, "
+            "immediately revealing that the data was tampered with. This prevents any attacker who intercepts the "
+            "encrypted message from modifying it without detection."
+        ),
+        "real_world": (
+            "This defends against Man-in-the-Middle attacks where an attacker on the network modifies encrypted data "
+            "in transit. Without authenticated encryption, an attacker could flip bits to change the meaning of the "
+            "message (e.g., changing a bank transfer amount)."
+        ),
+    }
+
+    return jsonify({
+        "ok": True,
+        "steps": _bytes_to_b64(all_steps),
+        "results": recv_result["results"],
+        "detected": tampered,
+        "explanation": explanation,
+    })
+
+
+def _attack_forge(sender_name: str, recipient_name: str):
+    """Forgery attack: sign with wrong key → receive detects invalid signature."""
+    all_steps = []
+    sender = clients[sender_name]
+    recipient_client = clients[recipient_name]
+
+    # Pick another user's key for forgery
+    forge_user = next((n for n in clients if n != sender_name), None)
+    if not forge_user:
+        return jsonify({"error": "Need at least 2 users for forgery demo."}), 400
+
+    result = sender.send_email_forged_with_log(
+        recipient_name, "[Attack Lab] Forgery Test",
+        "This message is signed with the WRONG private key — the sender is impersonating someone else.",
+        clients[forge_user].dilithium_sk, forge_user,
+    )
+    all_steps.extend(result["steps"])
+
+    # Receive as recipient — should detect forged signature
+    recv_result = recipient_client.receive_emails_with_log()
+    all_steps.extend(recv_result["steps"])
+
+    for r in recv_result["results"]:
+        r["read"] = False
+        subj = _extract_subject(r.get("plaintext"))
+        thread_id = _extract_header(r.get("plaintext", ""), "Thread-ID")
+        in_reply_to = _extract_header(r.get("plaintext", ""), "In-Reply-To")
+        email_id = db.save_email(
+            recipient=recipient_name, sender=r.get("sender", "unknown"),
+            plaintext=r.get("plaintext"), verified=r.get("verified", False),
+            error=r.get("error"), subject=subj,
+            thread_id=thread_id, in_reply_to=in_reply_to,
+        )
+        r["id"] = email_id
+        inboxes.setdefault(recipient_name, []).append(r)
+
+    for mid in recipient_client.seen_message_ids:
+        db.save_seen_id(recipient_name, mid)
+    db.delete_pending(recipient_name)
+
+    forged = any(
+        not r.get("verified") and "signature" in (r.get("error") or "").lower()
+        for r in recv_result["results"]
+    )
+
+    db.log_audit(sender_name, "attack_lab_forge",
+                 f"Forgery attack demo: {sender_name} → {recipient_name} (forged with {forge_user}'s key)",
+                 _get_ip())
+
+    explanation = {
+        "attack_name": "Signature Forgery (Impersonation)",
+        "detected": forged,
+        "security_property": "Authenticity",
+        "defense_mechanism": "Dilithium3 (ML-DSA-65) Digital Signature",
+        "how_it_works": (
+            "Every message is signed with the sender's Dilithium private key. The recipient verifies the signature "
+            "using the sender's registered public key. If the message was signed with a different private key "
+            f"(in this case, {forge_user}'s key instead of {sender_name}'s), the Dilithium verify() function returns "
+            "False, proving the message was not actually sent by the claimed sender."
+        ),
+        "real_world": (
+            "This defends against impersonation attacks where a malicious party tries to send messages pretending to be "
+            "someone else. Post-quantum signatures like Dilithium are resistant to both classical and quantum computer attacks, "
+            "unlike RSA or ECDSA which could be broken by a future quantum computer running Shor's algorithm."
+        ),
+    }
+
+    return jsonify({
+        "ok": True,
+        "steps": _bytes_to_b64(all_steps),
+        "results": recv_result["results"],
+        "detected": forged,
+        "explanation": explanation,
+    })
+
+
+def _attack_replay(sender_name: str, recipient_name: str):
+    """Replay attack: send → duplicate message → receive detects replay."""
+    all_steps = []
+    sender = clients[sender_name]
+    recipient_client = clients[recipient_name]
+
+    result = sender.send_email_with_log(
+        recipient_name, "[Attack Lab] Replay Test",
+        "This message will be duplicated to test replay protection.",
+    )
+    all_steps.extend(result["steps"])
+
+    # Duplicate the pending message
+    pending = mail_server.mailboxes.get(recipient_name, [])
+    if not pending:
+        return jsonify({"error": "No pending messages to replay."}), 400
+    pending.append(dict(pending[-1]))
+
+    all_steps.append({
+        "step": len(all_steps) + 1,
+        "title": "ATTACK: Message Replayed (Duplicate Injected)",
+        "description": "Copied the encrypted package and re-injected it — simulating an attacker who captured and replayed a legitimate message.",
+        "details": {
+            "attack_vector": "Replay Attack",
+            "action": "Duplicate encrypted package appended to recipient's mailbox",
+            "total_pending": len(pending),
+            "explanation": "The attacker doesn't need to decrypt — they just re-send a valid encrypted message to trick the recipient into processing it twice.",
+        },
+        "status": "error",
+    })
+
+    # Receive as recipient — first copy OK, second should be flagged as replay
+    recv_result = recipient_client.receive_emails_with_log()
+    all_steps.extend(recv_result["steps"])
+
+    for r in recv_result["results"]:
+        r["read"] = False
+        subj = _extract_subject(r.get("plaintext"))
+        thread_id = _extract_header(r.get("plaintext", ""), "Thread-ID")
+        in_reply_to = _extract_header(r.get("plaintext", ""), "In-Reply-To")
+        email_id = db.save_email(
+            recipient=recipient_name, sender=r.get("sender", "unknown"),
+            plaintext=r.get("plaintext"), verified=r.get("verified", False),
+            error=r.get("error"), subject=subj,
+            thread_id=thread_id, in_reply_to=in_reply_to,
+        )
+        r["id"] = email_id
+        inboxes.setdefault(recipient_name, []).append(r)
+
+    for mid in recipient_client.seen_message_ids:
+        db.save_seen_id(recipient_name, mid)
+    db.delete_pending(recipient_name)
+
+    replayed = any(
+        not r.get("verified") and "replay" in (r.get("error") or "").lower()
+        for r in recv_result["results"]
+    )
+
+    db.log_audit(sender_name, "attack_lab_replay",
+                 f"Replay attack demo: {sender_name} → {recipient_name}", _get_ip())
+
+    explanation = {
+        "attack_name": "Message Replay Attack",
+        "detected": replayed,
+        "security_property": "Freshness / Non-Duplication",
+        "defense_mechanism": "Unique Message-ID Tracking (Seen-ID Cache)",
+        "how_it_works": (
+            "Each message contains a unique Message-ID (UUID). When the recipient processes a message, the ID is added "
+            "to a seen-ID cache. If a second message arrives with the same Message-ID, it is immediately rejected as a replay. "
+            "The first copy decrypts and verifies normally, but the duplicate is caught."
+        ),
+        "real_world": (
+            "Replay attacks are dangerous because the attacker doesn't need to break any encryption — they simply re-send "
+            "a valid message. For example, an attacker could replay a 'transfer $100' message multiple times. "
+            "Message-ID tracking prevents this by ensuring each message is processed exactly once."
+        ),
+    }
+
+    return jsonify({
+        "ok": True,
+        "steps": _bytes_to_b64(all_steps),
+        "results": recv_result["results"],
+        "detected": replayed,
+        "explanation": explanation,
+    })
+
+
+def _attack_wrong_password(sender_name: str, recipient_name: str):
+    """Wrong password attack: send with password → try to receive with wrong password."""
+    all_steps = []
+    sender = clients[sender_name]
+    recipient_client = clients[recipient_name]
+    correct_password = "correct-password-123"
+    wrong_password = "wrong-password-456"
+
+    # Send password-protected message
+    result = sender.send_email_password_protected_with_log(
+        recipient_name, "[Attack Lab] Wrong Password Test",
+        "This message is encrypted with a shared password. The attacker will try the wrong password.",
+        correct_password,
+    )
+    all_steps.extend(result["steps"])
+
+    all_steps.append({
+        "step": len(all_steps) + 1,
+        "title": "ATTACK: Attempting Decryption with Wrong Password",
+        "description": f"The attacker (or recipient) enters the wrong password '{wrong_password}' instead of the correct one. "
+                       "scrypt will derive a completely different AES key, causing GCM decryption to fail.",
+        "details": {
+            "attack_vector": "Wrong Password / Brute Force",
+            "correct_password": correct_password,
+            "attempted_password": wrong_password,
+            "explanation": "scrypt KDF is a memory-hard function — even with the wrong password differing by one character, "
+                          "the derived 256-bit key will be completely different, causing AES-GCM to reject the ciphertext.",
+        },
+        "status": "error",
+    })
+
+    # Try to receive with the wrong password
+    recv_result = recipient_client.receive_emails_with_log(password=wrong_password)
+    all_steps.extend(recv_result["steps"])
+
+    for r in recv_result["results"]:
+        r["read"] = False
+        subj = _extract_subject(r.get("plaintext"))
+        thread_id = _extract_header(r.get("plaintext", ""), "Thread-ID")
+        in_reply_to = _extract_header(r.get("plaintext", ""), "In-Reply-To")
+        email_id = db.save_email(
+            recipient=recipient_name, sender=r.get("sender", "unknown"),
+            plaintext=r.get("plaintext"), verified=r.get("verified", False),
+            error=r.get("error"), subject=subj,
+            thread_id=thread_id, in_reply_to=in_reply_to,
+        )
+        r["id"] = email_id
+        inboxes.setdefault(recipient_name, []).append(r)
+
+    for mid in recipient_client.seen_message_ids:
+        db.save_seen_id(recipient_name, mid)
+    db.delete_pending(recipient_name)
+
+    # Check if decryption failed (it should fail with wrong password)
+    failed = any(
+        not r.get("verified")
+        for r in recv_result["results"]
+    )
+
+    db.log_audit(sender_name, "attack_lab_wrong_password",
+                 f"Wrong password attack demo: {sender_name} → {recipient_name}", _get_ip())
+
+    explanation = {
+        "attack_name": "Wrong Password Decryption (Level 1 Attack)",
+        "detected": failed,
+        "security_property": "Confidentiality (Symmetric)",
+        "defense_mechanism": "scrypt KDF + AES-256-GCM",
+        "how_it_works": (
+            "Level 1 encryption uses scrypt (a memory-hard Key Derivation Function) to convert the shared password into "
+            "a 256-bit AES key. Because scrypt is designed to be slow and memory-intensive, brute-forcing passwords is "
+            "extremely expensive. With the wrong password, scrypt derives a completely different key, so AES-GCM "
+            "decryption fails immediately (the authentication tag won't match)."
+        ),
+        "real_world": (
+            "This demonstrates why strong passwords matter. Even though the ciphertext is available to the attacker, "
+            "without the correct password, the scrypt KDF makes it computationally infeasible to try all possible "
+            "passwords. Each guess requires significant CPU time and memory (N=16384, r=8, p=1)."
+        ),
+    }
+
+    return jsonify({
+        "ok": True,
+        "steps": _bytes_to_b64(all_steps),
+        "results": recv_result["results"],
+        "detected": failed,
+        "explanation": explanation,
+    })
+
+
 # ── Routes: Report Export ────────────────────────────────────────────────────
 
 @app.route("/api/report/<username>")

@@ -4,6 +4,8 @@ import { useStore } from "@/hooks/useStore";
 import { api } from "@/services/api";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
+import { Select } from "@/components/ui/select";
+import { Label } from "@/components/ui/label";
 import {
   FlaskConical,
   Zap,
@@ -16,6 +18,8 @@ import {
   Play,
   ShieldCheck,
   Target,
+  BookOpen,
+  ArrowRight,
 } from "lucide-react";
 
 interface AttackScenario {
@@ -70,6 +74,14 @@ const SCENARIOS: AttackScenario[] = [
 type ScenarioResult = {
   status: "success" | "failure" | "pending";
   observed: string;
+  explanation?: {
+    attack_name: string;
+    detected: boolean;
+    security_property: string;
+    defense_mechanism: string;
+    how_it_works: string;
+    real_world: string;
+  };
   steps: Array<{ step: number; title: string; description: string; status: string }>;
 };
 
@@ -77,11 +89,13 @@ export default function AttackLab() {
   const { appState, activeUser, addCryptoSteps, clearCryptoLog } = useStore();
   const [running, setRunning] = useState<string | null>(null);
   const [results, setResults] = useState<Record<string, ScenarioResult>>({});
+  const [selectedRecipient, setSelectedRecipient] = useState("");
 
-  const otherUsers = appState
-    ? Object.keys(appState.users).filter((u) => u !== activeUser)
-    : [];
-  const recipient = otherUsers[0] || "";
+  const allUsers = appState ? Object.keys(appState.users) : [];
+  const otherUsers = allUsers.filter((u) => u !== activeUser);
+
+  // Auto-select first other user if none selected
+  const recipient = selectedRecipient || otherUsers[0] || "";
 
   const runScenario = async (scenario: AttackScenario) => {
     if (running || !recipient) return;
@@ -89,17 +103,22 @@ export default function AttackLab() {
     clearCryptoLog();
 
     try {
-      let result: ScenarioResult;
+      const res = await api.runAttack({
+        attack_type: scenario.attackType,
+        sender: activeUser,
+        recipient,
+      });
 
-      if (scenario.attackType === "tamper") {
-        result = await runTamperAttack(recipient);
-      } else if (scenario.attackType === "forge") {
-        result = await runForgeAttack(recipient);
-      } else if (scenario.attackType === "replay") {
-        result = await runReplayAttack(recipient);
-      } else {
-        result = await runWrongPasswordAttack(recipient);
-      }
+      addCryptoSteps(res.steps);
+
+      const result: ScenarioResult = {
+        status: res.detected ? "success" : "failure",
+        observed: res.detected
+          ? getSuccessMessage(scenario.attackType)
+          : "Unexpected: attack was not detected.",
+        explanation: res.explanation,
+        steps: res.steps as ScenarioResult["steps"],
+      };
 
       setResults((prev) => ({ ...prev, [scenario.id]: result }));
     } catch (err) {
@@ -116,131 +135,11 @@ export default function AttackLab() {
     }
   };
 
-  const runTamperAttack = async (target: string): Promise<ScenarioResult> => {
-    const sendRes = await api.send({
-      sender: activeUser,
-      recipient: target,
-      subject: "[Attack Lab] Tamper Test",
-      body: "This message will be tampered with after encryption.",
-      security_level: 2,
-    });
-    addCryptoSteps(sendRes.steps);
-
-    await api.tamper(target);
-    addCryptoSteps([{
-      step: 99,
-      title: "MitM: Ciphertext Tampered",
-      description: "Flipped byte 0 of ciphertext (XOR 0xFF) — simulating network-level modification.",
-      details: { attack: "XOR 0xFF on ciphertext[0]" },
-      status: "error",
-    }]);
-
-    const recvRes = await api.receive(target);
-    addCryptoSteps(recvRes.steps);
-
-    const tampered = recvRes.results.some(
-      (r) => !r.verified && (r.error ?? "").toLowerCase().includes("tamper"),
-    );
-
-    return {
-      status: tampered ? "success" : "failure",
-      observed: tampered
-        ? "GCM authentication tag verification failed — tampering detected. Message rejected."
-        : "Unexpected: tampering was not detected.",
-      steps: recvRes.steps as ScenarioResult["steps"],
-    };
-  };
-
-  const runForgeAttack = async (target: string): Promise<ScenarioResult> => {
-    const sendRes = await api.sendForged({
-      sender: activeUser,
-      recipient: target,
-      subject: "[Attack Lab] Forgery Test",
-      body: "This message is signed with a wrong private key.",
-    });
-    addCryptoSteps(sendRes.steps);
-
-    const recvRes = await api.receive(target);
-    addCryptoSteps(recvRes.steps);
-
-    const forged = recvRes.results.some(
-      (r) => !r.verified && (r.error ?? "").toLowerCase().includes("signature"),
-    );
-
-    return {
-      status: forged ? "success" : "failure",
-      observed: forged
-        ? "Dilithium3 signature verification failed — forged signature detected. Sender identity not confirmed."
-        : "Unexpected: forgery was not detected.",
-      steps: recvRes.steps as ScenarioResult["steps"],
-    };
-  };
-
-  const runReplayAttack = async (target: string): Promise<ScenarioResult> => {
-    const sendRes = await api.send({
-      sender: activeUser,
-      recipient: target,
-      subject: "[Attack Lab] Replay Test",
-      body: "This message will be duplicated to test replay protection.",
-      security_level: 2,
-    });
-    addCryptoSteps(sendRes.steps);
-
-    await api.replay(target);
-    addCryptoSteps([{
-      step: 99,
-      title: "Replay: Message Duplicated",
-      description: "Copied the encrypted package — simulating a replay attack.",
-      details: { attack: "Duplicate pending message appended" },
-      status: "error",
-    }]);
-
-    const recvRes = await api.receive(target);
-    addCryptoSteps(recvRes.steps);
-
-    const replayed = recvRes.results.some(
-      (r) => !r.verified && (r.error ?? "").toLowerCase().includes("replay"),
-    );
-
-    return {
-      status: replayed ? "success" : "failure",
-      observed: replayed
-        ? "Duplicate Message-ID found in seen-ID cache — replay attack detected. Second copy rejected."
-        : "Unexpected: replay was not detected.",
-      steps: recvRes.steps as ScenarioResult["steps"],
-    };
-  };
-
-  const runWrongPasswordAttack = async (target: string): Promise<ScenarioResult> => {
-    const sendRes = await api.send({
-      sender: activeUser,
-      recipient: target,
-      subject: "[Attack Lab] Wrong Password Test",
-      body: "This message is encrypted with a password. The attacker will try a wrong password.",
-      security_level: 1,
-      password: "correct-password-123",
-    });
-    addCryptoSteps(sendRes.steps);
-
-    addCryptoSteps([{
-      step: 99,
-      title: "Attack: Wrong Password Attempt",
-      description: "The recipient will attempt decryption — the server uses the stored package as-is, but Level 1 requires the correct password on the receive side.",
-      details: { attack: "KDF will derive a different AES key from any wrong password" },
-      status: "error",
-    }]);
-
-    const recvRes = await api.receive(target);
-    addCryptoSteps(recvRes.steps);
-
-    const hasMessages = recvRes.results.length > 0;
-    return {
-      status: "success",
-      observed: hasMessages
-        ? "Level 1 message received. In production, decryption with a wrong password would produce garbage output or fail GCM tag verification. The demo server stores the correct password context."
-        : "No pending messages to process.",
-      steps: recvRes.steps as ScenarioResult["steps"],
-    };
+  const runAllScenarios = async () => {
+    if (running || !recipient) return;
+    for (const scenario of SCENARIOS) {
+      await runScenario(scenario);
+    }
   };
 
   return (
@@ -258,21 +157,52 @@ export default function AttackLab() {
         </div>
       </div>
 
-      <Card className="flex items-center gap-3 p-3">
-        <Target className="w-4 h-4 text-muted-foreground" />
-        <div className="flex-1 min-w-0 text-[11px]">
-          <span className="text-muted-foreground">Attacker: </span>
-          <span className="font-medium text-foreground capitalize">{activeUser}</span>
-          <span className="text-muted-foreground mx-2">{"->"}</span>
-          <span className="text-muted-foreground">Target: </span>
-          <span className="font-medium text-foreground capitalize">{recipient || "none"}</span>
-        </div>
-        {running && (
-          <div className="flex items-center gap-2">
-            <Loader2 className="w-3.5 h-3.5 text-destructive animate-spin" />
-            <span className="text-[10px] font-mono text-destructive">Running...</span>
+      {/* Attacker / Target selector */}
+      <Card className="p-3 space-y-3">
+        <div className="flex items-center gap-3">
+          <Target className="w-4 h-4 text-muted-foreground flex-shrink-0" />
+          <div className="flex-1 grid grid-cols-[1fr_auto_1fr] items-center gap-3">
+            <div>
+              <Label className="text-[10px] uppercase tracking-wider text-muted-foreground">Attacker (Sender)</Label>
+              <div className="text-[12px] font-semibold text-foreground capitalize mt-0.5 px-2 py-1.5 rounded-md bg-secondary border">
+                {activeUser}
+              </div>
+            </div>
+            <ArrowRight className="w-4 h-4 text-destructive mt-4" />
+            <div>
+              <Label className="text-[10px] uppercase tracking-wider text-muted-foreground">Target (Recipient)</Label>
+              <Select
+                value={recipient}
+                onChange={(e) => setSelectedRecipient(e.target.value)}
+                className="mt-0.5"
+              >
+                {otherUsers.length === 0 && <option value="">No other users</option>}
+                {otherUsers.map((u) => (
+                  <option key={u} value={u}>
+                    {u.charAt(0).toUpperCase() + u.slice(1)}
+                  </option>
+                ))}
+              </Select>
+            </div>
           </div>
-        )}
+        </div>
+        <div className="flex items-center gap-2">
+          <Button
+            variant="destructive"
+            size="sm"
+            onClick={runAllScenarios}
+            disabled={!!running || !recipient}
+          >
+            <Play className="w-3.5 h-3.5" />
+            Run All Attacks
+          </Button>
+          {running && (
+            <div className="flex items-center gap-2">
+              <Loader2 className="w-3.5 h-3.5 text-destructive animate-spin" />
+              <span className="text-[10px] font-mono text-destructive">Running...</span>
+            </div>
+          )}
+        </div>
       </Card>
 
       <div className="space-y-3">
@@ -339,7 +269,8 @@ export default function AttackLab() {
               </CardContent>
 
               {result && (
-                <div className="mx-4 mb-3">
+                <div className="mx-4 mb-3 space-y-2">
+                  {/* Detection result */}
                   <div
                     className={cn(
                       "p-3 rounded-md border",
@@ -373,6 +304,36 @@ export default function AttackLab() {
                       {result.observed}
                     </div>
                   </div>
+
+                  {/* Educational explanation */}
+                  {result.explanation && (
+                    <div className="p-3 rounded-md border bg-primary/5 border-primary/20">
+                      <div className="flex items-center gap-1.5 mb-2">
+                        <BookOpen className="w-3.5 h-3.5 text-primary" />
+                        <span className="text-[11px] font-semibold text-primary">
+                          How This Defense Works
+                        </span>
+                      </div>
+                      <div className="space-y-2 text-[11px] leading-relaxed">
+                        <div>
+                          <span className="font-semibold text-foreground">Security Property: </span>
+                          <span className="text-primary font-mono">{result.explanation.security_property}</span>
+                        </div>
+                        <div>
+                          <span className="font-semibold text-foreground">Defense Mechanism: </span>
+                          <span className="text-foreground">{result.explanation.defense_mechanism}</span>
+                        </div>
+                        <div>
+                          <span className="font-semibold text-foreground">Technical Explanation: </span>
+                          <span className="text-muted-foreground">{result.explanation.how_it_works}</span>
+                        </div>
+                        <div>
+                          <span className="font-semibold text-foreground">Real-World Relevance: </span>
+                          <span className="text-muted-foreground">{result.explanation.real_world}</span>
+                        </div>
+                      </div>
+                    </div>
+                  )}
                 </div>
               )}
             </Card>
@@ -412,7 +373,7 @@ export default function AttackLab() {
                           : "text-muted-foreground",
                     )}
                   >
-                    {r ? (r.status === "success" ? "PASS" : "FAIL") : "—"}
+                    {r ? (r.status === "success" ? "DETECTED" : "FAIL") : "—"}
                   </div>
                 </div>
               );
@@ -422,4 +383,19 @@ export default function AttackLab() {
       )}
     </div>
   );
+}
+
+function getSuccessMessage(attackType: string): string {
+  switch (attackType) {
+    case "tamper":
+      return "GCM authentication tag verification failed — tampering detected. Message rejected.";
+    case "forge":
+      return "Dilithium3 signature verification failed — forged signature detected. Sender identity not confirmed.";
+    case "replay":
+      return "Duplicate Message-ID found in seen-ID cache — replay attack detected. Second copy rejected.";
+    case "wrong-password":
+      return "scrypt derived a different AES key from the wrong password — GCM decryption failed. Message unreadable without correct password.";
+    default:
+      return "Attack detected.";
+  }
 }

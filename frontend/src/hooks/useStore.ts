@@ -100,6 +100,7 @@ export const useStore = create<Store>((set, get) => ({
 
   sendEmail: async (data) => {
     const { activeUser } = get();
+    set({ cryptoLog: [] });
     const result = await api.send({
       sender: activeUser,
       recipient: data.recipient,
@@ -124,7 +125,10 @@ export const useStore = create<Store>((set, get) => ({
     try {
       const result = await api.receive(activeUser);
       if (get().activeUser !== activeUser) return;
-      get().addCryptoSteps(result.steps);
+      if (result.steps && result.steps.length > 0) {
+        set({ cryptoLog: [] });
+        get().addCryptoSteps(result.steps);
+      }
       await get().loadFolders();
       await get().loadEmails();
     } finally {
@@ -132,7 +136,7 @@ export const useStore = create<Store>((set, get) => ({
     }
   },
 
-  addCryptoSteps: (steps) => set((s) => ({ cryptoLog: [...s.cryptoLog, ...steps] })),
+  addCryptoSteps: (steps) => set((s) => ({ cryptoLog: [...steps, ...s.cryptoLog] })),
   clearCryptoLog: () => set({ cryptoLog: [] }),
 
   toggleTheme: () => {
