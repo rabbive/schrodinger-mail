@@ -2,6 +2,10 @@
 
 A production-oriented, quantum-secure email platform that demonstrates how to build modern encrypted messaging with **NIST-standardized post-quantum cryptography**. Schrödinger Mail combines a Flask backend and React frontend with a **Signed KEM-DEM** pipeline to deliver confidentiality, integrity, and authenticity against both classical and quantum-era threats.
 
+[![Live Demo](https://img.shields.io/badge/Live%20Demo-Open%20App-430098?logo=heroku&logoColor=white)](https://schrodinger-mail-demo-v1-505dfee1b310.herokuapp.com/dashboard)
+
+**[Try the live demo →](https://schrodinger-mail-demo-v1-505dfee1b310.herokuapp.com/dashboard)** — enter as Alice or Bob; no registration required.
+
 **GitHub repo bio (copy/paste):**  
 Schrödinger Mail is a post-quantum secure email platform built with Kyber, Dilithium, and AES-GCM, featuring signed KEM-DEM encryption, modern web UX, and production-ready deployment assets.
 
