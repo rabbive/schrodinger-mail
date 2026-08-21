@@ -48,19 +48,20 @@ export default function EmailReader() {
   const [showJson, setShowJson] = useState(false);
 
   const selected = emails.find((e) => e.id === selectedEmailId);
+  const detailsEmailId = selected?.id;
 
   useEffect(() => {
-    if (!selected) {
+    if (!detailsEmailId) {
       setDetails(null);
       return;
     }
     setLoadingDetails(true);
     api
-      .getVerifyDetails(activeUser, selected.id)
+      .getVerifyDetails(activeUser, detailsEmailId)
       .then((d) => setDetails(d))
       .catch(() => setDetails(null))
       .finally(() => setLoadingDetails(false));
-  }, [selected?.id, activeUser]);
+  }, [detailsEmailId, activeUser]);
 
   if (!selected) {
     return (

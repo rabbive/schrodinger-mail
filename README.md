@@ -5,6 +5,8 @@ A production-oriented, quantum-secure email platform that demonstrates how to bu
 **GitHub repo bio (copy/paste):**  
 Schrödinger Mail is a post-quantum secure email platform built with Kyber, Dilithium, and AES-GCM, featuring signed KEM-DEM encryption, modern web UX, and production-ready deployment assets.
 
+[![Deploy](https://www.herokucdn.com/deploy/button.svg)](https://heroku.com/deploy?template=https://github.com/rabbive/schrodinger-mail)
+
 ## Why this repository exists
 
 This project is designed as both:
@@ -189,6 +191,38 @@ docker compose up --build
 # Open http://localhost:5001
 ```
 
+### Lowest-Cost Heroku Demo
+
+The Deploy button creates one **Eco web dyno** with no database, Redis, worker,
+or scheduler add-ons. Flask serves both the built React UI and API from one
+container. Alice and Bob are seeded automatically, and shared demo data resets
+on dyno restart. This is intentional for a public demo and minimizes credit use.
+
+1. Click **Deploy to Heroku** above.
+2. Confirm the generated secrets and deploy.
+3. Open the app and choose **Enter as Alice** or **Enter as Bob**.
+
+For CLI deployment:
+
+```bash
+heroku create --stack container your-schrodinger-mail
+heroku config:set -a your-schrodinger-mail \
+  QEC_SECRET_KEY="$(openssl rand -hex 32)" \
+  QEC_JWT_SECRET="$(openssl rand -hex 32)" \
+  QEC_DEMO_MODE=1 QEC_DEMO_USERS=alice,bob \
+  QEC_RESET_DEMO_ON_START=1 QEC_DB_PATH=/tmp/schrodinger-mail-demo.db \
+  QEC_REQUIRE_AUTH=1 QEC_ALLOW_REGISTRATION=0 QEC_COOKIE_SECURE=1
+heroku container:login
+heroku container:push web -a your-schrodinger-mail
+heroku container:release web -a your-schrodinger-mail
+heroku ps:scale web=1:eco -a your-schrodinger-mail
+heroku open -a your-schrodinger-mail
+```
+
+No Postgres add-on is needed for this ephemeral demo. For persistent accounts
+and messages, attach the smallest Heroku Postgres plan and unset
+`QEC_RESET_DEMO_ON_START`; SQLAlchemy automatically uses `DATABASE_URL`.
+
 ### Running Tests
 
 ```bash
@@ -231,8 +265,14 @@ Environment variables (all optional):
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `QEC_SECRET_KEY` | `dev-secret-change-in-production` | Flask session secret |
+| `QEC_JWT_SECRET` | `QEC_SECRET_KEY` | JWT signing secret |
 | `QEC_DEBUG` | `0` | Set to `1` to enable Flask debug mode |
-| `QEC_PORT` | `5001` | Server port |
+| `PORT` / `QEC_PORT` | `5001` | Server port (`PORT` is supplied by Heroku) |
+| `QEC_DEMO_MODE` | `0` | Seed public demo users and show quick-entry buttons |
+| `QEC_RESET_DEMO_ON_START` | `0` | Reset SQLite demo state on process start |
+| `QEC_REQUIRE_AUTH` | `0` | Require authentication even for passwordless users |
+| `QEC_ALLOW_REGISTRATION` | `1` | Enable account registration |
+| `QEC_COOKIE_SECURE` | `0` | Restrict session cookies to HTTPS |
 
 ---
 

@@ -189,9 +189,13 @@ def get_engine(url: Optional[str] = None):
     if url is None:
         url = getattr(config, "DATABASE_URL", None) or f"sqlite:///{config.DB_PATH}"
     connect_args = {}
+    engine_options = {"pool_pre_ping": True}
     if url.startswith("sqlite"):
         connect_args["check_same_thread"] = False
-    engine = create_engine(url, connect_args=connect_args, pool_pre_ping=True)
+    else:
+        # Small pool fits Heroku's entry-level Postgres connection limits.
+        engine_options.update(pool_size=5, max_overflow=2, pool_recycle=300)
+    engine = create_engine(url, connect_args=connect_args, **engine_options)
     if url.startswith("sqlite"):
         @event.listens_for(engine, "connect")
         def _set_sqlite_pragma(dbapi_conn, connection_record):

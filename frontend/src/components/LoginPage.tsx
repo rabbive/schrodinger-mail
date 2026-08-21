@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Shield } from "lucide-react";
 import { useStore } from "@/hooks/useStore";
 import { api, setAccessToken } from "@/services/api";
@@ -11,6 +11,44 @@ export default function LoginPage({ onSuccess }: { onSuccess: () => void }) {
   const [password2, setPassword2] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
+  const [publicConfig, setPublicConfig] = useState<{
+    demo_mode: boolean;
+    demo_users: string[];
+    allow_registration: boolean;
+    ephemeral_demo: boolean;
+  } | null>(null);
+
+  useEffect(() => {
+    api.authStatus().then(setPublicConfig).catch(() => undefined);
+  }, []);
+
+  async function completeAuthentication(data: {
+    access_token: string;
+    refresh_token: string;
+  }) {
+    setAccessToken(data.access_token);
+    localStorage.setItem("qec-access-token", data.access_token);
+    localStorage.setItem("qec-refresh-token", data.refresh_token);
+    useStore.setState({
+      accessToken: data.access_token,
+      refreshToken: data.refresh_token,
+    });
+    await init();
+    onSuccess();
+  }
+
+  async function handleDemoLogin(demoUser: string) {
+    setError("");
+    setLoading(true);
+    try {
+      const data = await api.demoLogin(demoUser);
+      await completeAuthentication(data);
+    } catch (err: unknown) {
+      setError((err as Error).message || "Could not enter demo.");
+    } finally {
+      setLoading(false);
+    }
+  }
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -33,19 +71,7 @@ export default function LoginPage({ onSuccess }: { onSuccess: () => void }) {
         : await api.login(username.trim().toLowerCase(), password);
 
       if (!data.ok) throw new Error("Authentication failed");
-
-      if (data.access_token) {
-        setAccessToken(data.access_token);
-        localStorage.setItem("qec-access-token", data.access_token);
-        useStore.setState({ accessToken: data.access_token });
-      }
-      if (data.refresh_token) {
-        localStorage.setItem("qec-refresh-token", data.refresh_token);
-        useStore.setState({ refreshToken: data.refresh_token });
-      }
-
-      await init();
-      onSuccess();
+      await completeAuthentication(data);
     } catch (err: unknown) {
       setError((err as Error).message || "Something went wrong.");
     } finally {
@@ -66,31 +92,60 @@ export default function LoginPage({ onSuccess }: { onSuccess: () => void }) {
 
         {/* Card */}
         <div className="border rounded-xl bg-card shadow-sm p-6">
-          {/* Tab toggle */}
-          <div className="flex gap-1 bg-muted rounded-lg p-1 mb-5">
-            <button
-              type="button"
-              onClick={() => { setMode("login"); setError(""); }}
-              className={`flex-1 py-1.5 px-3 rounded-md text-sm font-medium transition-colors ${
-                mode === "login"
-                  ? "bg-background text-foreground shadow-sm"
-                  : "text-muted-foreground hover:text-foreground"
-              }`}
-            >
-              Sign in
-            </button>
-            <button
-              type="button"
-              onClick={() => { setMode("register"); setError(""); }}
-              className={`flex-1 py-1.5 px-3 rounded-md text-sm font-medium transition-colors ${
-                mode === "register"
-                  ? "bg-background text-foreground shadow-sm"
-                  : "text-muted-foreground hover:text-foreground"
-              }`}
-            >
-              Create account
-            </button>
-          </div>
+          {publicConfig?.demo_mode && (
+            <div className="mb-5 rounded-lg border border-primary/25 bg-primary/5 p-3">
+              <p className="text-xs font-semibold text-foreground mb-1">Interactive public demo</p>
+              <p className="text-[11px] text-muted-foreground mb-2.5">
+                Enter a seeded account—no password required. Use Alice to send and run attacks;
+                switch to Bob to inspect received mail.
+              </p>
+              <div className="grid grid-cols-2 gap-2">
+                {publicConfig.demo_users.map((demoUser) => (
+                  <button
+                    key={demoUser}
+                    type="button"
+                    disabled={loading}
+                    onClick={() => handleDemoLogin(demoUser)}
+                    className="py-1.5 px-2 rounded-md bg-primary text-primary-foreground text-xs font-semibold capitalize hover:bg-primary/90 disabled:opacity-50"
+                  >
+                    Enter as {demoUser}
+                  </button>
+                ))}
+              </div>
+              {publicConfig.ephemeral_demo && (
+                <p className="text-[10px] text-muted-foreground mt-2">
+                  Shared demo data resets whenever the app restarts.
+                </p>
+              )}
+            </div>
+          )}
+
+          {publicConfig?.allow_registration !== false && (
+            <div className="flex gap-1 bg-muted rounded-lg p-1 mb-5">
+              <button
+                type="button"
+                onClick={() => { setMode("login"); setError(""); }}
+                className={`flex-1 py-1.5 px-3 rounded-md text-sm font-medium transition-colors ${
+                  mode === "login"
+                    ? "bg-background text-foreground shadow-sm"
+                    : "text-muted-foreground hover:text-foreground"
+                }`}
+              >
+                Sign in
+              </button>
+              <button
+                type="button"
+                onClick={() => { setMode("register"); setError(""); }}
+                className={`flex-1 py-1.5 px-3 rounded-md text-sm font-medium transition-colors ${
+                  mode === "register"
+                    ? "bg-background text-foreground shadow-sm"
+                    : "text-muted-foreground hover:text-foreground"
+                }`}
+              >
+                Create account
+              </button>
+            </div>
+          )}
 
           <form onSubmit={handleSubmit} className="space-y-3">
             <div>

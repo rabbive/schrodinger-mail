@@ -76,6 +76,11 @@ class TestState:
         assert resp.status_code == 200
         # Should render the new home page, not error.
 
+    def test_healthcheck(self, app_client):
+        resp = app_client.get("/healthz")
+        assert resp.status_code == 200
+        assert resp.get_json()["status"] == "ok"
+
 
 # ── Send & Receive ───────────────────────────────────────────────────────────
 
@@ -287,6 +292,25 @@ class TestAuth:
         _post_json(app_client, "/api/auth/login", {"username": "alice"}, csrf)
         resp = _post_json(app_client, "/api/auth/logout", csrf=csrf)
         assert resp.get_json()["ok"] is True
+
+    def test_public_demo_login_and_authorization(self, app_client, monkeypatch):
+        import config as cfg
+        monkeypatch.setattr(cfg, "DEMO_MODE", True)
+        monkeypatch.setattr(cfg, "REQUIRE_AUTH", True)
+        monkeypatch.setattr(cfg, "ALLOW_REGISTRATION", False)
+        monkeypatch.setattr(cfg, "DEMO_USERS", ("alice", "bob"))
+
+        assert app_client.get("/api/state").status_code == 401
+
+        resp = _post_json(app_client, "/api/auth/demo", {"username": "alice"})
+        data = resp.get_json()
+        assert resp.status_code == 200
+        assert data["ok"] is True
+        assert data["access_token"]
+
+        # Alice's session cannot read or process Bob's mailbox.
+        assert _post_json(app_client, "/api/receive/bob").status_code == 403
+        assert _post_json(app_client, "/api/register", {"username": "eve"}).status_code == 403
 
 
 # ── Keys ─────────────────────────────────────────────────────────────────────

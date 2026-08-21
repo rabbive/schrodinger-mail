@@ -43,6 +43,7 @@ app.secret_key = config.SECRET_KEY
 app.config["MAX_CONTENT_LENGTH"] = config.MAX_ATTACHMENT_BYTES + 1024 * 1024
 app.config["SESSION_COOKIE_HTTPONLY"] = True
 app.config["SESSION_COOKIE_SAMESITE"] = "Strict"
+app.config["SESSION_COOKIE_SECURE"] = config.COOKIE_SECURE
 
 # Rate limiting
 try:
@@ -73,6 +74,18 @@ undo_queue: Dict[str, Dict] = {}
 # ── Bootstrap ────────────────────────────────────────────────────────────────
 
 def _bootstrap() -> None:
+    if config.DEMO_MODE and config.RESET_DEMO_ON_START:
+        if config.DATABASE_URL.startswith("sqlite"):
+            config.DB_PATH.parent.mkdir(parents=True, exist_ok=True)
+            for suffix in ("", "-wal", "-shm"):
+                try:
+                    config.DB_PATH.with_name(config.DB_PATH.name + suffix).unlink()
+                except FileNotFoundError:
+                    pass
+            logger.info("Public demo database reset: %s", config.DB_PATH)
+        else:
+            logger.warning("QEC_RESET_DEMO_ON_START ignored for non-SQLite database")
+
     db.init_db()
     saved_users = db.load_users()
     if saved_users:
@@ -87,6 +100,17 @@ def _bootstrap() -> None:
             )
             clients[u["username"]] = c
             inboxes[u["username"]] = db.load_emails(u["username"])
+    elif config.DEMO_MODE:
+        for username in config.DEMO_USERS:
+            c = Client(username, mail_server)
+            clients[username] = c
+            inboxes[username] = []
+            db.save_user(
+                username, c.kyber_pk, c.kyber_sk,
+                c.dilithium_pk, c.dilithium_sk,
+                rsa_pk=c.rsa_pk, rsa_sk=c.rsa_sk,
+            )
+        logger.info("Seeded public demo users: %s", ", ".join(config.DEMO_USERS))
     else:
         logger.info("No users found; waiting for registration.")
     logger.info("Bootstrap complete: %d users loaded", len(clients))
@@ -166,6 +190,17 @@ def _get_ip() -> str:
     return request.headers.get("X-Real-IP") or request.remote_addr or ""
 
 
+def _start_user_session(username: str, audit_action: str = "login") -> Dict[str, str]:
+    """Create the Flask session, audit record, and JWT pair for a user."""
+    session["username"] = username
+    sid = secrets.token_hex(16)
+    session["session_id"] = sid
+    db.save_session(sid, username, _get_ip(), request.user_agent.string)
+    db.log_audit(username, audit_action, "Logged in", _get_ip())
+    metrics.inc("auth_login_total")
+    return jwt_auth.create_token_pair(username)
+
+
 def _current_user() -> Optional[str]:
     token = request.headers.get("Authorization", "").replace("Bearer ", "")
     if token:
@@ -179,7 +214,7 @@ def _require_auth(f):
     @wraps(f)
     def wrapper(*args, **kwargs):
         has_any_password = any(db.get_password_hash(u) for u in clients)
-        if has_any_password:
+        if config.REQUIRE_AUTH or has_any_password:
             user = _current_user()
             if not user:
                 return jsonify({"error": "Authentication required.", "login_required": True}), 401
@@ -302,7 +337,9 @@ def _record_duration(response):
 
 @app.route("/")
 def home():
-    """Login / register landing page."""
+    """Login / register landing page, or React entrypoint in public demo mode."""
+    if config.DEMO_MODE:
+        return redirect(url_for("dashboard"))
     return render_template("home.html")
 
 
@@ -337,15 +374,24 @@ def api_login():
             db.log_audit(username, "login_failed", "Wrong password", _get_ip())
             return jsonify({"error": "Invalid password."}), 401
 
-    session["username"] = username
-    sid = secrets.token_hex(16)
-    session["session_id"] = sid
-    db.save_session(sid, username, _get_ip(), request.user_agent.string)
-    db.log_audit(username, "login", "Logged in", _get_ip())
-    metrics.inc("auth_login_total")
+    tokens = _start_user_session(username)
+    return jsonify({
+        "ok": True,
+        "user": _user_info(username),
+        **tokens,
+    })
 
-    tokens = jwt_auth.create_token_pair(username)
 
+@app.route("/api/auth/demo", methods=["POST"])
+def api_demo_login():
+    """Enter a seeded account without credentials when public demo mode is on."""
+    if not config.DEMO_MODE:
+        return jsonify({"error": "Demo mode is disabled."}), 404
+    data = request.get_json(force=True)
+    username = data.get("username", "").strip().lower()
+    if username not in config.DEMO_USERS or username not in clients:
+        return jsonify({"error": "Unknown demo user."}), 404
+    tokens = _start_user_session(username, "demo_login")
     return jsonify({
         "ok": True,
         "user": _user_info(username),
@@ -418,6 +464,10 @@ def api_auth_status():
         "csrf_token": session.get("csrf_token", ""),
         "zero_knowledge_mode": config.ZERO_KNOWLEDGE_MODE,
         "forward_secrecy": config.FORWARD_SECRECY,
+        "demo_mode": config.DEMO_MODE,
+        "demo_users": list(config.DEMO_USERS) if config.DEMO_MODE else [],
+        "allow_registration": config.ALLOW_REGISTRATION,
+        "ephemeral_demo": config.DEMO_MODE and config.RESET_DEMO_ON_START,
     })
 
 
@@ -661,6 +711,9 @@ def api_send_forged():
 
     if sender_name not in clients:
         return jsonify({"error": f"Unknown sender '{sender_name}'"}), 404
+    err = _assert_own_user(sender_name)
+    if err:
+        return err
     if recipient_name not in clients:
         return jsonify({"error": f"Unknown recipient '{recipient_name}'"}), 404
     if not subject or not body:
@@ -1573,6 +1626,7 @@ def api_verify_keys():
 # ── Routes: Benchmarks ──────────────────────────────────────────────────────
 
 @app.route("/api/benchmarks")
+@_require_auth
 def api_benchmarks():
     results = crypto_utils.run_benchmarks(iterations=5)
     return jsonify({"benchmarks": results})
@@ -1582,6 +1636,8 @@ def api_benchmarks():
 
 @app.route("/api/register", methods=["POST"])
 def api_register():
+    if not config.ALLOW_REGISTRATION:
+        return jsonify({"error": "Registration is disabled on this public demo."}), 403
     data = request.get_json(force=True)
     username = data.get("username", "").strip().lower()
     password = data.get("password", "")
@@ -1621,14 +1677,8 @@ def api_register():
     db.log_audit(username, "register", "User registered", _get_ip())
     metrics.inc("auth_register_total")
 
-    # Auto-login: create a session and issue tokens so the frontend can
-    # redirect straight to the dashboard without a second login round-trip.
-    session["username"] = username
-    sid = secrets.token_hex(16)
-    session["session_id"] = sid
-    db.save_session(sid, username, _get_ip(), request.user_agent.string)
-    tokens = jwt_auth.create_token_pair(username)
-
+    # Auto-login so the frontend can continue without a second round-trip.
+    tokens = _start_user_session(username, "register_login")
     return jsonify({"ok": True, "user": _user_info(username), "steps": keygen["steps"], **tokens})
 
 
@@ -1668,6 +1718,10 @@ def api_attack_lab_run():
         return jsonify({"error": f"Unknown recipient '{recipient_name}'"}), 404
     if sender_name == recipient_name:
         return jsonify({"error": "Sender and recipient must be different users."}), 400
+    if not config.DEMO_MODE:
+        err = _assert_own_user(sender_name)
+        if err:
+            return err
 
     if attack_type == "tamper":
         return _attack_tamper(sender_name, recipient_name)
@@ -2092,7 +2146,13 @@ th{{background:#f0f0f0}}.section{{margin:24px 0}}.mono{{font-family:monospace;fo
                      mimetype="text/html", as_attachment=True)
 
 
-# ── Routes: Metrics ──────────────────────────────────────────────────────────
+# ── Routes: Health & Metrics ─────────────────────────────────────────────────
+
+@app.route("/healthz")
+def healthz():
+    """Cheap liveness check for Heroku and container platforms."""
+    return jsonify({"status": "ok", "users": len(clients), "demo_mode": config.DEMO_MODE})
+
 
 @app.route("/metrics")
 def prometheus_metrics():
@@ -2101,6 +2161,7 @@ def prometheus_metrics():
 
 
 @app.route("/api/metrics")
+@_require_auth
 def api_metrics():
     """JSON metrics for the UI."""
     return jsonify(metrics.get_metrics())

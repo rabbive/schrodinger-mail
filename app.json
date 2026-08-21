@@ -1,0 +1,55 @@
+{
+  "name": "Schrodinger Mail Demo",
+  "description": "Interactive post-quantum secure email demo using ML-KEM-768, ML-DSA-65, and AES-256-GCM.",
+  "repository": "https://github.com/rabbive/schrodinger-mail",
+  "keywords": ["flask", "react", "post-quantum", "cryptography", "email"],
+  "stack": "container",
+  "env": {
+    "QEC_SECRET_KEY": {
+      "description": "Flask session signing key.",
+      "generator": "secret"
+    },
+    "QEC_JWT_SECRET": {
+      "description": "JWT signing key.",
+      "generator": "secret"
+    },
+    "QEC_DEMO_MODE": {
+      "description": "Enable seeded public demo accounts.",
+      "value": "1"
+    },
+    "QEC_DEMO_USERS": {
+      "description": "Seeded accounts shown on the demo login screen.",
+      "value": "alice,bob"
+    },
+    "QEC_RESET_DEMO_ON_START": {
+      "description": "Reset shared demo data on every dyno start, avoiding a database add-on.",
+      "value": "1"
+    },
+    "QEC_DB_PATH": {
+      "description": "Ephemeral SQLite database path for the public demo.",
+      "value": "/tmp/schrodinger-mail-demo.db"
+    },
+    "QEC_REQUIRE_AUTH": {
+      "description": "Require JWT/session authentication for protected APIs.",
+      "value": "1"
+    },
+    "QEC_ALLOW_REGISTRATION": {
+      "description": "Prevent public key-generation abuse; use seeded demo accounts.",
+      "value": "0"
+    },
+    "QEC_COOKIE_SECURE": {
+      "description": "Send session cookies only over Heroku HTTPS.",
+      "value": "1"
+    },
+    "QEC_METRICS": {
+      "description": "Disable optional metrics work on the smallest dyno.",
+      "value": "0"
+    }
+  },
+  "formation": {
+    "web": {
+      "quantity": 1,
+      "size": "eco"
+    }
+  }
+}

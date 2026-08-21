@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useStore } from "@/hooks/useStore";
 import { api } from "@/services/api";
 import type { AuditEntry } from "@/types";
@@ -10,13 +10,13 @@ export default function AuditPanel() {
   const { activeUser } = useStore();
   const [entries, setEntries] = useState<AuditEntry[]>([]);
 
-  const load = () => {
+  const load = useCallback(() => {
     api.getAuditLog(activeUser).then((d) => setEntries(d.log)).catch(console.error);
-  };
+  }, [activeUser]);
 
   useEffect(() => {
     load();
-  }, [activeUser]);
+  }, [load]);
 
   return (
     <div className="max-w-2xl space-y-3">

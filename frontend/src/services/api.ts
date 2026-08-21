@@ -49,15 +49,27 @@ export const api = {
       { username, password },
     ),
   logout: () => post<{ ok: boolean }>("/api/auth/logout"),
+  demoLogin: (username: string) =>
+    post<{ ok: boolean; user: unknown; access_token: string; refresh_token: string }>(
+      "/api/auth/demo",
+      { username },
+    ),
   register: (username: string, password?: string) =>
     post<{ ok: boolean; user: unknown; steps: CryptoStep[]; access_token: string; refresh_token: string }>(
       "/api/register",
       { username, password },
     ),
   authStatus: () =>
-    get<{ auth_enabled: boolean; logged_in: boolean; username: string; csrf_token: string }>(
-      "/api/auth/status",
-    ),
+    get<{
+      auth_enabled: boolean;
+      logged_in: boolean;
+      username: string;
+      csrf_token: string;
+      demo_mode: boolean;
+      demo_users: string[];
+      allow_registration: boolean;
+      ephemeral_demo: boolean;
+    }>("/api/auth/status"),
   refreshToken: (refreshToken: string) =>
     post<{ access_token: string; refresh_token: string }>("/api/auth/refresh", {
       refresh_token: refreshToken,

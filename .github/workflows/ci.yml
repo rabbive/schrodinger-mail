@@ -26,12 +26,16 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y cmake ninja-build libssl-dev
 
-      - name: Build and install liboqs
+      - name: Build and install minimal liboqs
         run: |
-          git clone --depth 1 https://github.com/open-quantum-safe/liboqs.git /tmp/liboqs
-          cd /tmp/liboqs && mkdir build && cd build
-          cmake -GNinja .. -DCMAKE_INSTALL_PREFIX=/usr/local -DBUILD_SHARED_LIBS=ON
-          ninja && sudo ninja install
+          git clone --depth 1 --branch 0.16.0 https://github.com/open-quantum-safe/liboqs.git /tmp/liboqs
+          cmake -S /tmp/liboqs -B /tmp/liboqs/build -GNinja \
+            -DCMAKE_INSTALL_PREFIX=/usr/local \
+            -DBUILD_SHARED_LIBS=ON \
+            -DOQS_BUILD_ONLY_LIB=ON \
+            -DOQS_MINIMAL_BUILD="KEM_ml_kem_768;SIG_ml_dsa_65"
+          cmake --build /tmp/liboqs/build --parallel
+          sudo cmake --install /tmp/liboqs/build
           sudo ldconfig
 
       - name: Install Python dependencies
@@ -59,3 +63,23 @@ jobs:
         with:
           name: test-results-py${{ matrix.python-version }}
           path: .pytest_cache/
+
+  frontend:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install frontend dependencies
+        run: npm --prefix frontend ci --no-audit --no-fund
+
+      - name: Lint frontend
+        run: npm --prefix frontend run lint
+
+      - name: Build frontend
+        run: npm --prefix frontend run build

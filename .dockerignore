@@ -1,4 +1,5 @@
 venv/
+.venv/
 __pycache__/
 *.pyc
 .pytest_cache/
@@ -6,5 +7,10 @@ __pycache__/
 *.db-wal
 *.db-shm
 .git/
+.github/
+.claude/
 .cursor/
+frontend/node_modules/
+static/
 *.plan.md
+.DS_Store
