@@ -144,6 +144,34 @@ class TestSendReceive:
         assert data["ok"] is True
         assert data.get("security_level") == 3
 
+        received = _post_json(app_client, "/api/receive/bob", csrf=csrf).get_json()
+        assert received["results"][0]["verified"] is True
+
+    def test_password_message_waits_and_can_retry(self, app_client):
+        csrf = _get_csrf(app_client)
+        sent = _post_json(app_client, "/api/send-password", {
+            "sender": "alice", "recipient": "bob",
+            "subject": "Level 1", "body": "Shared secret",
+            "password": "correct-horse",
+        }, csrf)
+        assert sent.status_code == 200
+
+        waiting = _post_json(app_client, "/api/receive/bob", csrf=csrf).get_json()
+        assert waiting["password_required"] is True
+        assert waiting["results"] == []
+
+        wrong = _post_json(app_client, "/api/receive/bob", {
+            "password": "wrong-password",
+        }, csrf).get_json()
+        assert wrong["password_required"] is True
+        assert wrong["results"][0]["retryable"] is True
+
+        received = _post_json(app_client, "/api/receive/bob", {
+            "password": "correct-horse",
+        }, csrf).get_json()
+        assert received["password_required"] is False
+        assert received["results"][0]["verified"] is True
+
 
 # ── Attack Demos ─────────────────────────────────────────────────────────────
 

@@ -13,6 +13,7 @@ interface Store {
   activeTab: string;
   cryptoLog: CryptoStep[];
   loading: boolean;
+  passwordRequired: boolean;
   theme: "dark" | "light";
   accessToken: string | null;
   refreshToken: string | null;
@@ -36,7 +37,7 @@ interface Store {
     threadId?: string;
     inReplyTo?: string;
   }) => Promise<CryptoStep[]>;
-  receiveEmails: () => Promise<void>;
+  receiveEmails: (password?: string) => Promise<void>;
   addCryptoSteps: (steps: CryptoStep[]) => void;
   clearCryptoLog: () => void;
   toggleTheme: () => void;
@@ -55,6 +56,7 @@ export const useStore = create<Store>((set, get) => ({
   activeTab: "demo-guide",
   cryptoLog: [],
   loading: false,
+  passwordRequired: false,
   theme: (localStorage.getItem("qec-theme") as "dark" | "light") || "dark",
   accessToken: localStorage.getItem("qec-access-token"),
   refreshToken: localStorage.getItem("qec-refresh-token"),
@@ -76,7 +78,13 @@ export const useStore = create<Store>((set, get) => ({
   setActiveTab: (tab) => set({ activeTab: tab }),
 
   setActiveUser: (user) => {
-    set({ activeUser: user, activeFolder: "inbox", emails: [], selectedEmailId: null });
+    set({
+      activeUser: user,
+      activeFolder: "inbox",
+      emails: [],
+      selectedEmailId: null,
+      passwordRequired: false,
+    });
     get().receiveEmails();
   },
 
@@ -118,13 +126,14 @@ export const useStore = create<Store>((set, get) => ({
     return result.steps;
   },
 
-  receiveEmails: async () => {
+  receiveEmails: async (password) => {
     const { activeUser, loading } = get();
     if (loading) return;
     set({ loading: true });
     try {
-      const result = await api.receive(activeUser);
+      const result = await api.receive(activeUser, password);
       if (get().activeUser !== activeUser) return;
+      set({ passwordRequired: result.password_required });
       if (result.steps && result.steps.length > 0) {
         set({ cryptoLog: [] });
         get().addCryptoSteps(result.steps);

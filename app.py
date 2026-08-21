@@ -788,10 +788,42 @@ def api_receive(username: str):
     if err:
         return err
 
-    client = clients[username]
-    result = client.receive_emails_with_log()
+    data = request.get_json(silent=True) or {}
+    password = data.get("password", "")
+    incoming = list(mail_server.mailboxes.get(username, []))
+    password_packages = [msg for msg in incoming if msg.get("password_protected")]
 
-    for r in result["results"]:
+    # Automatic polling must not consume password-protected mail before the
+    # recipient has a chance to provide its shared password.
+    if password_packages and not password:
+        return jsonify({
+            "ok": True,
+            "steps": [{
+                "step": 1,
+                "title": "Password Required",
+                "description": "A Level 1 message is waiting. Enter its shared password to decrypt it.",
+                "details": {"password_messages": len(password_packages)},
+                "status": "info",
+            }],
+            "results": [],
+            "password_required": True,
+        })
+
+    client = clients[username]
+    result = client.receive_emails_with_log(password=password or None)
+
+    # Wrong passwords are retryable: put those encrypted packages back rather
+    # than permanently consuming or storing a failed inbox entry.
+    retry_packages = []
+    for package, received in zip(incoming, result["results"]):
+        if package.get("password_protected") and not received.get("verified"):
+            received["retryable"] = True
+            retry_packages.append(package)
+    if retry_packages:
+        mail_server.mailboxes[username].extend(retry_packages)
+
+    stored_results = [r for r in result["results"] if not r.get("retryable")]
+    for r in stored_results:
         r["read"] = False
         subj = _extract_subject(r.get("plaintext"))
         thread_id = _extract_header(r.get("plaintext", ""), "Thread-ID")
@@ -822,19 +854,21 @@ def api_receive(username: str):
 
     for mid in client.seen_message_ids:
         db.save_seen_id(username, mid)
-    db.delete_pending(username)
+    if not retry_packages:
+        db.delete_pending(username)
 
-    verified_count = sum(1 for r in result["results"] if r.get("verified"))
-    failed_count = len(result["results"]) - verified_count
-    if result["results"]:
+    verified_count = sum(1 for r in stored_results if r.get("verified"))
+    failed_count = len(stored_results) - verified_count
+    if stored_results:
         db.log_audit(username, "receive_email",
-                     f"Received {len(result['results'])} ({verified_count} ok, {failed_count} failed)",
+                     f"Received {len(stored_results)} ({verified_count} ok, {failed_count} failed)",
                      _get_ip())
 
     return jsonify({
         "ok": True,
         "steps": _bytes_to_b64(result["steps"]),
         "results": result["results"],
+        "password_required": bool(retry_packages),
     })
 
 

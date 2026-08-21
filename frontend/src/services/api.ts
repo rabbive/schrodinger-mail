@@ -122,8 +122,13 @@ export const api = {
   },
   sendForged: (data: { sender: string; recipient: string; subject: string; body: string }) =>
     post<{ ok: boolean; steps: CryptoStep[] }>("/api/send-forged", data),
-  receive: (username: string) =>
-    post<{ ok: boolean; steps: CryptoStep[]; results: Email[] }>(`/api/receive/${username}`),
+  receive: (username: string, password?: string) =>
+    post<{
+      ok: boolean;
+      steps: CryptoStep[];
+      results: Email[];
+      password_required: boolean;
+    }>(`/api/receive/${username}`, password ? { password } : {}),
   tamper: (username: string) =>
     post<{ ok: boolean }>(`/api/tamper/${username}`),
   replay: (username: string) =>

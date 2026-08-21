@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { useStore } from "@/hooks/useStore";
 import { cn } from "@/lib/utils";
 import { Separator } from "@/components/ui/separator";
@@ -16,6 +16,7 @@ import {
   ShieldAlert,
   KeyRound,
   Fingerprint,
+  LockKeyhole,
 } from "lucide-react";
 
 const FOLDER_ICONS: Record<string, React.ReactNode> = {
@@ -35,12 +36,14 @@ export default function Sidebar() {
     emails,
     appState,
     loading,
+    passwordRequired,
     setActiveFolder,
     setSelectedEmailId,
     setActiveTab,
     loadFolders,
     receiveEmails,
   } = useStore();
+  const [sharedPassword, setSharedPassword] = useState("");
 
   useEffect(() => {
     loadFolders();
@@ -74,6 +77,32 @@ export default function Sidebar() {
       </div>
 
       <Separator className="mx-3" />
+
+      {passwordRequired && (
+        <form
+          className="mx-3 my-2 rounded-md border border-quantum-orange/30 bg-quantum-orange/5 p-2 space-y-1.5"
+          onSubmit={async (event) => {
+            event.preventDefault();
+            if (!sharedPassword) return;
+            await receiveEmails(sharedPassword);
+            if (!useStore.getState().passwordRequired) setSharedPassword("");
+          }}
+        >
+          <div className="flex items-center gap-1 text-[10px] font-semibold text-quantum-orange">
+            <LockKeyhole className="w-3 h-3" /> Level 1 message waiting
+          </div>
+          <input
+            type="password"
+            value={sharedPassword}
+            onChange={(event) => setSharedPassword(event.target.value)}
+            placeholder="Shared password"
+            className="w-full rounded border bg-background px-2 py-1 text-[11px] outline-none focus:border-primary"
+          />
+          <Button type="submit" size="sm" disabled={loading || !sharedPassword} className="w-full h-6 text-[10px]">
+            Decrypt message
+          </Button>
+        </form>
+      )}
 
       {user && (
         <div className="px-3 py-2">
@@ -113,7 +142,7 @@ export default function Sidebar() {
               Syncing
             </span>
           )}
-          <Button variant="ghost" size="sm" onClick={receiveEmails} className="h-5 px-1.5 text-[10px]">
+          <Button variant="ghost" size="sm" onClick={() => receiveEmails()} className="h-5 px-1.5 text-[10px]">
             <RefreshCw className="w-3 h-3" />
             Refresh
           </Button>
