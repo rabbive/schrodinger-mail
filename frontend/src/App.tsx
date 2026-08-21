@@ -71,7 +71,10 @@ export default function App() {
       if (socketRef.current) {
         socketRef.current.disconnect();
       }
-      const socket = io({ transports: ["websocket", "polling"] });
+      // Start with Engine.IO polling, then upgrade when WebSocket is healthy.
+      // Some proxies reject a direct WebSocket handshake; polling preserves
+      // real-time Socket.IO events instead of leaving the client disconnected.
+      const socket = io({ transports: ["polling", "websocket"] });
       socketRef.current = socket;
 
       socket.on("connect", () => {
